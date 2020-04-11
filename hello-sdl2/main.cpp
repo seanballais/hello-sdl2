@@ -21,9 +21,22 @@ int main(int argc, char* args[])
     if (!loadMedia()) {
       std::cout << "Failed to load media." << std::endl;
     } else {
-      SDL_BlitSurface(gHelloSDL2Img, NULL, gScreenSurface, NULL);
-      SDL_UpdateWindowSurface(gWindow);
-      SDL_Delay(2000);
+      bool shouldAppQuit = false;
+      SDL_Event event;
+      while (!shouldAppQuit) {
+        while (SDL_PollEvent(&event) != 0) {
+          switch (event.type) {
+            case SDL_QUIT:
+              shouldAppQuit = true;
+              break;
+            default:
+              continue;
+          }
+        }
+
+        SDL_BlitSurface(gHelloSDL2Img, NULL, gScreenSurface, NULL);
+        SDL_UpdateWindowSurface(gWindow);
+      }
     }
   }
 
