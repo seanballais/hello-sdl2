@@ -1,10 +1,10 @@
 .DEFAULT_GOAL := all
-.PHONY: setup_data clean
+.PHONY: all setup_data clean
 
-all: part0
+all: main
 
-part0: setup_data part0/main.cpp
-	g++ part0/main.cpp -o bin/part0 -lSDL2
+main: setup_data hello-sdl2/main.cpp
+	g++ hello-sdl2/main.cpp -o bin/hello-sdl2 -lSDL2
 
 setup_data:
 	mkdir -p bin/ bin/data/
