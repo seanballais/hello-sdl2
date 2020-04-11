@@ -74,7 +74,12 @@ int main(int argc, char* args[])
           }
         }
 
-        SDL_BlitSurface(gCurrentSurface, NULL, gScreenSurface, NULL);
+        SDL_Rect stretchRect;
+        stretchRect.x = 0;
+        stretchRect.y = 0;
+        stretchRect.w = SCREEN_WIDTH;
+        stretchRect.h = SCREEN_HEIGHT;
+        SDL_BlitScaled(gCurrentSurface, NULL, gScreenSurface, &stretchRect);
         SDL_UpdateWindowSurface(gWindow);
       }
     }
@@ -156,11 +161,22 @@ void closeApp()
 
 SDL_Surface* loadSurface(std::string path)
 {
-  SDL_Surface* surface = SDL_LoadBMP(path.c_str());
-  if (surface == nullptr) {
+  SDL_Surface* optimizedSurface = nullptr;
+  SDL_Surface* loadedSurface = SDL_LoadBMP(path.c_str());
+  if (loadedSurface == nullptr) {
     std::cout << "Unable to load BMP image, " << path << ". SDL Error: "
               << SDL_GetError() << std::endl;
+  } else {
+    optimizedSurface = SDL_ConvertSurface(loadedSurface,
+                                          gScreenSurface->format,
+                                          0);
+    if (optimizedSurface == nullptr) {
+      std::cout << "Unable to optimize BMP image, " << path << ". SDL Error: "
+                << SDL_GetError() << std::endl;
+    }
+
+    SDL_FreeSurface(loadedSurface);
   }
 
-  return surface;
+  return optimizedSurface;
 }
