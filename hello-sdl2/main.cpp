@@ -38,27 +38,19 @@ int main(int argc, char* args[])
           }
         }
 
-        SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
-        SDL_RenderClear(gRenderer);
+        SDL_Rect topLeftViewport{0, 0, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2};
+        SDL_RenderSetViewport(gRenderer, &topLeftViewport);
+        SDL_RenderCopy(gRenderer, gTexture, nullptr, nullptr);
 
-        SDL_Rect fillRect { SCREEN_WIDTH / 4, SCREEN_HEIGHT / 4,
-                            SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 };
-        SDL_SetRenderDrawColor(gRenderer, 0xFF, 0x00, 0x00, 0xFF);
-        SDL_RenderFillRect(gRenderer, &fillRect);
+        SDL_Rect topRightViewport{SCREEN_WIDTH / 2, 0, SCREEN_WIDTH / 2,
+                                  SCREEN_HEIGHT / 2};
+        SDL_RenderSetViewport(gRenderer, &topRightViewport);
+        SDL_RenderCopy(gRenderer, gTexture, nullptr, nullptr);
 
-        SDL_Rect outlineRect { SCREEN_WIDTH / 6, SCREEN_HEIGHT / 6,
-                               SCREEN_WIDTH * 2 / 3, SCREEN_HEIGHT * 2 / 3};
-        SDL_SetRenderDrawColor(gRenderer, 0x00, 0xFF, 0x00, 0xFF);
-        SDL_RenderDrawRect(gRenderer, &outlineRect);
-
-        SDL_SetRenderDrawColor(gRenderer, 0x00, 0x00, 0xFF, 0xFF);
-        SDL_RenderDrawLine(gRenderer, 0, SCREEN_HEIGHT / 2, SCREEN_WIDTH,
-                           SCREEN_HEIGHT / 2);
-
-        SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0x00, 0xFF);
-        for (int i = 0; i < SCREEN_HEIGHT; i += 4) {
-          SDL_RenderDrawPoint(gRenderer, SCREEN_WIDTH / 2, i);
-        }
+        SDL_Rect bottomViewport{0, SCREEN_HEIGHT / 2, SCREEN_WIDTH,
+                                SCREEN_HEIGHT / 2};
+        SDL_RenderSetViewport(gRenderer, &bottomViewport);
+        SDL_RenderCopy(gRenderer, gTexture, nullptr, nullptr);
 
         SDL_RenderPresent(gRenderer);
       }
@@ -112,6 +104,12 @@ bool initApp()
 bool loadMedia()
 {
   bool loadingSuccessState = true;
+
+  gTexture = loadTexture("data/textures/sample_texture.png");
+  if (gTexture == nullptr) {
+    std::cout << "Failed to load texture image." << std::endl;
+    loadingSuccessState = false;
+  }
 
   return loadingSuccessState;
 }
