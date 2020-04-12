@@ -4,7 +4,10 @@
 all: app
 
 app: setup_data hello-sdl2/main.cpp
-	g++ hello-sdl2/main.cpp -o bin/hello-sdl2 -lSDL2
+	g++ -Wall -g \
+		hello-sdl2/main.cpp \
+		-o bin/hello-sdl2 \
+		-lSDL2 -lSDL2_image -lSLD2_ttf -lSDL2_mixer
 
 setup_data:
 	mkdir -p bin/ bin/data/

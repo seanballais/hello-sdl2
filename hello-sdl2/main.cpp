@@ -1,6 +1,9 @@
 #include <iostream>
 
 #include <SDL2/SDL.h>
+#include <SDL2/SDL_image.h>
+#include <SDL2/SDL_ttf.h>
+#include <SDL2/SDL_mixer.h>
 
 const int SCREEN_WIDTH = 640;
 const int SCREEN_HEIGHT = 480;
@@ -110,7 +113,14 @@ bool initApp()
                 << std::endl;
       initSuccessState = false;
     } else {
-      gScreenSurface = SDL_GetWindowSurface(gWindow);
+      const int imgFlags = IMG_INIT_PNG;
+      if (!(IMG_Init(imgFlags) & imgFlags)) {
+        std::cout << "SDL_image could not initialize. SDL_image Error: "
+                  << IMG_GetError() << std::endl;
+        initSuccessState = false;
+      } else {
+        gScreenSurface = SDL_GetWindowSurface(gWindow);
+      }
     }
   }
 
@@ -162,7 +172,7 @@ void closeApp()
 SDL_Surface* loadSurface(std::string path)
 {
   SDL_Surface* optimizedSurface = nullptr;
-  SDL_Surface* loadedSurface = SDL_LoadBMP(path.c_str());
+  SDL_Surface* loadedSurface = IMG_Load(path.c_str());
   if (loadedSurface == nullptr) {
     std::cout << "Unable to load BMP image, " << path << ". SDL Error: "
               << SDL_GetError() << std::endl;
