@@ -2,33 +2,20 @@
 
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
-#include <SDL2/SDL_ttf.h>
-#include <SDL2/SDL_mixer.h>
 
 const int SCREEN_WIDTH = 640;
 const int SCREEN_HEIGHT = 480;
 
-enum KeyPressSurfaces
-{
-  KEY_PRESS_SURFACE_DEFAULT,
-  KEY_PRESS_SURFACE_UP,
-  KEY_PRESS_SURFACE_DOWN,
-  KEY_PRESS_SURFACE_LEFT,
-  KEY_PRESS_SURFACE_RIGHT,
-  KEY_PRESS_SURFACE_TOTAL
-};
-
 SDL_Window* gWindow = nullptr;
-SDL_Surface* gScreenSurface = nullptr;
-SDL_Surface* gCurrentSurface = nullptr;
-
-SDL_Surface* gKeyPressSurfaces[KEY_PRESS_SURFACE_TOTAL];
+SDL_Renderer* gRenderer = nullptr;
+SDL_Texture* gTexture = nullptr;
 
 bool initApp();
 bool loadMedia();
 void closeApp();
 
 SDL_Surface* loadSurface(std::string path);
+SDL_Texture* loadTexture(std::string path);
 
 int main(int argc, char* args[])
 {
@@ -40,50 +27,20 @@ int main(int argc, char* args[])
     } else {
       bool shouldAppQuit = false;
       SDL_Event event;
-      gCurrentSurface = gKeyPressSurfaces[KEY_PRESS_SURFACE_DEFAULT];
       while (!shouldAppQuit) {
         while (SDL_PollEvent(&event) != 0) {
           switch (event.type) {
             case SDL_QUIT:
               shouldAppQuit = true;
               break;
-
-            case SDL_KEYDOWN:
-              switch (event.key.keysym.sym) {
-                case SDLK_UP:
-                  gCurrentSurface = gKeyPressSurfaces[KEY_PRESS_SURFACE_UP];
-                  break;
-
-                case SDLK_DOWN:
-                  gCurrentSurface = gKeyPressSurfaces[KEY_PRESS_SURFACE_DOWN];
-                  break;
-
-                case SDLK_LEFT:
-                  gCurrentSurface = gKeyPressSurfaces[KEY_PRESS_SURFACE_LEFT];
-                  break;
-
-                case SDLK_RIGHT:
-                  gCurrentSurface = gKeyPressSurfaces[KEY_PRESS_SURFACE_RIGHT];
-                  break;
-
-                default:
-                  gCurrentSurface = gKeyPressSurfaces[
-                                      KEY_PRESS_SURFACE_DEFAULT];
-                  break;
-              }
-              break;
             default:
               continue;
           }
         }
 
-        SDL_Rect stretchRect;
-        stretchRect.x = 0;
-        stretchRect.y = 0;
-        stretchRect.w = SCREEN_WIDTH;
-        stretchRect.h = SCREEN_HEIGHT;
-        SDL_BlitScaled(gCurrentSurface, NULL, gScreenSurface, &stretchRect);
-        SDL_UpdateWindowSurface(gWindow);
+        SDL_RenderClear(gRenderer);
+        SDL_RenderCopy(gRenderer, gTexture, nullptr, nullptr);
+        SDL_RenderPresent(gRenderer);
       }
     }
   }
@@ -95,62 +52,51 @@ int main(int argc, char* args[])
 
 bool initApp()
 {
-  bool initSuccessState = true;
-
   if (SDL_Init(SDL_INIT_VIDEO) < 0) {
     std::cout << "SDL could not be initialized. SDL Error: " << SDL_GetError()
               << std::endl;
-    initSuccessState = false;
-  } else {
-    gWindow = SDL_CreateWindow("Hello SDL 2",
-                               SDL_WINDOWPOS_UNDEFINED,
-                               SDL_WINDOWPOS_UNDEFINED,
-                               SCREEN_WIDTH,
-                               SCREEN_HEIGHT,
-                               SDL_WINDOW_SHOWN);
-    if (gWindow == nullptr) {
-      std::cout << "Window could not be created. SDL Error: " << SDL_GetError()
-                << std::endl;
-      initSuccessState = false;
-    } else {
-      const int imgFlags = IMG_INIT_PNG;
-      if (!(IMG_Init(imgFlags) & imgFlags)) {
-        std::cout << "SDL_image could not initialize. SDL_image Error: "
-                  << IMG_GetError() << std::endl;
-        initSuccessState = false;
-      } else {
-        gScreenSurface = SDL_GetWindowSurface(gWindow);
-      }
-    }
+    return false;
   }
 
-  return initSuccessState;
+  gWindow = SDL_CreateWindow("Hello SDL 2",
+                             SDL_WINDOWPOS_UNDEFINED,
+                             SDL_WINDOWPOS_UNDEFINED,
+                             SCREEN_WIDTH,
+                             SCREEN_HEIGHT,
+                             SDL_WINDOW_SHOWN);
+  if (gWindow == nullptr) {
+    std::cout << "Window could not be created. SDL Error: " << SDL_GetError()
+              << std::endl;
+    return false;
+  }
+
+  gRenderer = SDL_CreateRenderer(gWindow, -1, SDL_RENDERER_ACCELERATED);
+  if (gRenderer == nullptr) {
+    std::cout << "Renderer could not be created. SDL Error: " << SDL_GetError()
+              << std::endl;
+    return false;
+  }
+
+  SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
+  
+  const int imgFlags = IMG_INIT_PNG;
+  if (!(IMG_Init(imgFlags) & imgFlags)) {
+    std::cout << "SDL_image could not initialize. SDL_image Error: "
+              << IMG_GetError() << std::endl;
+    return false;
+  }
+
+  return true;
 }
 
 bool loadMedia()
 {
   bool loadingSuccessState = true;
 
-  const char* defaultImagePath = "data/hello-sdl2.bmp";
-  gKeyPressSurfaces[KEY_PRESS_SURFACE_DEFAULT] = loadSurface(defaultImagePath);
-
-  const char* upImagePath = "data/key_presses/up.bmp";
-  gKeyPressSurfaces[KEY_PRESS_SURFACE_UP] = loadSurface(upImagePath);
-
-  const char* downImagePath = "data/key_presses/down.bmp";
-  gKeyPressSurfaces[KEY_PRESS_SURFACE_DOWN] = loadSurface(downImagePath);
-
-  const char* leftImagePath = "data/key_presses/left.bmp";
-  gKeyPressSurfaces[KEY_PRESS_SURFACE_LEFT] = loadSurface(leftImagePath);
-
-  const char* rightImagePath = "data/key_presses/right.bmp";
-  gKeyPressSurfaces[KEY_PRESS_SURFACE_RIGHT] = loadSurface(rightImagePath);
-
-  for (auto*& surface : gKeyPressSurfaces) {
-    if (surface == nullptr) {
-      loadingSuccessState = false;
-      break;
-    }
+  gTexture = loadTexture("data/textures/sample_texture.png");
+  if (gTexture == nullptr) {
+    std::cout << "Failed to texture image." << std::endl;
+    loadingSuccessState = false;
   }
 
   return loadingSuccessState;
@@ -158,35 +104,35 @@ bool loadMedia()
 
 void closeApp()
 {
-  for (auto*& surface : gKeyPressSurfaces) {
-    SDL_FreeSurface(surface);
-    surface = nullptr;
-  }
+  SDL_DestroyTexture(gTexture);
+  gTexture = nullptr;
 
+  SDL_DestroyRenderer(gRenderer);
   SDL_DestroyWindow(gWindow);
   gWindow = nullptr;
+  gRenderer = nullptr;
 
+  IMG_Quit();
   SDL_Quit();
 }
 
-SDL_Surface* loadSurface(std::string path)
+SDL_Texture* loadTexture(std::string path)
 {
-  SDL_Surface* optimizedSurface = nullptr;
-  SDL_Surface* loadedSurface = IMG_Load(path.c_str());
-  if (loadedSurface == nullptr) {
-    std::cout << "Unable to load BMP image, " << path << ". SDL Error: "
+  SDL_Texture* texture = nullptr;
+
+  SDL_Surface* surface = IMG_Load(path.c_str());
+  if (surface == nullptr) {
+    std::cout << "Unable to load image, " << path << ". SDL Error: "
               << SDL_GetError() << std::endl;
   } else {
-    optimizedSurface = SDL_ConvertSurface(loadedSurface,
-                                          gScreenSurface->format,
-                                          0);
-    if (optimizedSurface == nullptr) {
-      std::cout << "Unable to optimize BMP image, " << path << ". SDL Error: "
-                << SDL_GetError() << std::endl;
+    texture = SDL_CreateTextureFromSurface(gRenderer, surface);
+    if (texture == nullptr) {
+      std::cout << "Unable to create texture from image, " << path
+                << ". SDL Error: " << SDL_GetError() << std::endl;
     }
 
-    SDL_FreeSurface(loadedSurface);
+    SDL_FreeSurface(surface);
   }
 
-  return optimizedSurface;
+  return texture;
 }
