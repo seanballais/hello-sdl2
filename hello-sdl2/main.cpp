@@ -1,3 +1,4 @@
+#include <cmath>
 #include <iostream>
 
 #include <SDL2/SDL.h>
@@ -93,7 +94,6 @@ private:
   int height;
 };
 
-SDL_Rect gSpriteClips[4];
 LTexture gSpriteSheetTexture;
 
 bool initApp();
@@ -111,6 +111,17 @@ int main(int argc, char* args[])
     if (!loadMedia()) {
       std::cout << "Failed to load media." << std::endl;
     } else {
+      const int spriteFrameWidth = 32;
+      const int spriteFrameHeight = 32;
+      const int spriteXLoc = (SCREEN_WIDTH / 2) - (spriteFrameWidth / 2);
+      const int spriteYLoc = (SCREEN_HEIGHT / 2) - (spriteFrameHeight / 2);
+
+      int currSheetClipNum = 0;
+
+      SDL_Rect spriteClip{0, 0, spriteFrameWidth, spriteFrameHeight};
+
+      unsigned int prevAnimationTime = SDL_GetTicks();
+
       bool shouldAppQuit = false;
       SDL_Event event;
       while (!shouldAppQuit) {
@@ -127,14 +138,18 @@ int main(int argc, char* args[])
         SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
         SDL_RenderClear(gRenderer);
 
-        gSpriteSheetTexture.render(0, 0, &gSpriteClips[0]);
-        gSpriteSheetTexture.render(SCREEN_WIDTH - gSpriteClips[1].w,
-                                   0, &gSpriteClips[1]);
-        gSpriteSheetTexture.render(0, SCREEN_HEIGHT - gSpriteClips[2].h,
-                                   &gSpriteClips[2]);
-        gSpriteSheetTexture.render(SCREEN_WIDTH - gSpriteClips[3].w,
-                                   SCREEN_HEIGHT - gSpriteClips[3].h,
-                                   &gSpriteClips[3]);
+        gSpriteSheetTexture.render(spriteXLoc, spriteYLoc, &spriteClip);
+
+        unsigned int currentAnimationTime = SDL_GetTicks();
+
+        if ((currentAnimationTime - prevAnimationTime) > 83) {
+          currSheetClipNum = (currSheetClipNum + 1) % 16;
+          spriteClip.x = (currSheetClipNum % 4) * spriteFrameWidth;
+          spriteClip.y = static_cast<int>(
+                           floor(static_cast<float>(currSheetClipNum) / 4.f));
+          spriteClip.y = spriteClip.y * spriteFrameHeight;
+          prevAnimationTime = currentAnimationTime;
+        }
 
         SDL_RenderPresent(gRenderer);
       }
@@ -189,14 +204,10 @@ bool loadMedia()
 {
   bool loadingSuccessState = true;
 
-  if (!gSpriteSheetTexture.loadFromFile("data/textures/sprites.png")) {
+  const std::string texturePath = "data/textures/spritesheet_caveman.png";
+  if (!gSpriteSheetTexture.loadFromFile(texturePath)) {
     std::cout << "Failed to load sprite sheet texture." << std::endl;
     loadingSuccessState = false;
-  } else {
-    gSpriteClips[0] = {0, 0, 100, 100};
-    gSpriteClips[1] = {100, 0, 100, 100};
-    gSpriteClips[2] = {0, 100, 100, 100};
-    gSpriteClips[3] = {100, 100, 100, 100};
   }
 
   return loadingSuccessState;
