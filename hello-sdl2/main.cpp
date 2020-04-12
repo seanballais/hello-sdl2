@@ -64,10 +64,16 @@ public:
     }
   }
 
-  void render(int x, int y)
+  void render(int x, int y, SDL_Rect* clip = nullptr)
   {
     SDL_Rect renderQuad{x, y, this->width, this->height};
-    SDL_RenderCopy(gRenderer, this->texture, nullptr, &renderQuad);
+
+    if (clip != nullptr) {
+      renderQuad.w = clip->w;
+      renderQuad.h = clip->h;
+    }
+
+    SDL_RenderCopy(gRenderer, this->texture, clip, &renderQuad);
   }
 
   int getWidth()
@@ -87,8 +93,8 @@ private:
   int height;
 };
 
-LTexture gFooTexture;
-LTexture gBackGroundTexture;
+SDL_Rect gSpriteClips[4];
+LTexture gSpriteSheetTexture;
 
 bool initApp();
 bool loadMedia();
@@ -121,8 +127,14 @@ int main(int argc, char* args[])
         SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
         SDL_RenderClear(gRenderer);
 
-        gBackGroundTexture.render(0, 0);
-        gFooTexture.render(240, 190);
+        gSpriteSheetTexture.render(0, 0, &gSpriteClips[0]);
+        gSpriteSheetTexture.render(SCREEN_WIDTH - gSpriteClips[1].w,
+                                   0, &gSpriteClips[1]);
+        gSpriteSheetTexture.render(0, SCREEN_HEIGHT - gSpriteClips[2].h,
+                                   &gSpriteClips[2]);
+        gSpriteSheetTexture.render(SCREEN_WIDTH - gSpriteClips[3].w,
+                                   SCREEN_HEIGHT - gSpriteClips[3].h,
+                                   &gSpriteClips[3]);
 
         SDL_RenderPresent(gRenderer);
       }
@@ -177,14 +189,14 @@ bool loadMedia()
 {
   bool loadingSuccessState = true;
 
-  if (!gFooTexture.loadFromFile("data/textures/foo.png")) {
-    std::cout << "Failed to load Foo texture image." << std::endl;
+  if (!gSpriteSheetTexture.loadFromFile("data/textures/sprites.png")) {
+    std::cout << "Failed to load sprite sheet texture." << std::endl;
     loadingSuccessState = false;
-  }
-
-  if (!gBackGroundTexture.loadFromFile("data/textures/background.png")) {
-    std::cout << "Failed to load background texture image." << std::endl;
-    loadingSuccessState = false;
+  } else {
+    gSpriteClips[0] = {0, 0, 100, 100};
+    gSpriteClips[1] = {100, 0, 100, 100};
+    gSpriteClips[2] = {0, 100, 100, 100};
+    gSpriteClips[3] = {100, 100, 100, 100};
   }
 
   return loadingSuccessState;
@@ -192,8 +204,7 @@ bool loadMedia()
 
 void closeApp()
 {
-  gFooTexture.free();
-  gBackGroundTexture.free();
+  gSpriteSheetTexture.free();
 
   SDL_DestroyRenderer(gRenderer);
   SDL_DestroyWindow(gWindow);
