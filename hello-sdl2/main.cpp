@@ -71,6 +71,16 @@ public:
     SDL_SetTextureColorMod(this->texture, r, g, b);
   }
 
+  void setBlendMode(SDL_BlendMode blending)
+  {
+    SDL_SetTextureBlendMode(this->texture, blending);
+  }
+
+  void setAlpha(uint8_t alpha)
+  {
+    SDL_SetTextureAlphaMod(this->texture, alpha);
+  }
+
   void render(int x, int y, SDL_Rect* clip = nullptr)
   {
     SDL_Rect renderQuad{x, y, this->width, this->height};
@@ -100,7 +110,8 @@ private:
   int height;
 };
 
-LTexture gTexture;
+LTexture gForegroundTexture;
+LTexture gBackgroundTexture;
 
 bool initApp();
 bool loadMedia();
@@ -119,9 +130,7 @@ int main(int argc, char* args[])
     } else {
       bool shouldAppQuit = false;
       SDL_Event event;
-      uint8_t r = 255;
-      uint8_t g = 255;
-      uint8_t b = 255;
+      uint8_t a = 255;
       while (!shouldAppQuit) {
         while (SDL_PollEvent(&event) != 0) {
           switch (event.type) {
@@ -130,23 +139,19 @@ int main(int argc, char* args[])
               break;
             case SDL_KEYDOWN:
               switch (event.key.keysym.sym) {
-                case SDLK_q:
-                  r += 32;
-                  break;
                 case SDLK_w:
-                  g += 32;
-                  break;
-                case SDLK_e:
-                  b += 32;
-                  break;
-                case SDLK_a:
-                  r -= 32;
+                  if (a + 32 > 255) {
+                    a = 255;
+                  } else {
+                    a += 32;
+                  }
                   break;
                 case SDLK_s:
-                  g -= 32;
-                  break;
-                case SDLK_d:
-                  b -= 32;
+                  if (a - 32 < 0) {
+                    a = 0;
+                  } else {
+                    a -= 32;
+                  }
                   break;
               }
             default:
@@ -157,8 +162,10 @@ int main(int argc, char* args[])
         SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
         SDL_RenderClear(gRenderer);
 
-        gTexture.setColor(r, g, b);
-        gTexture.render(0, 0);
+        gBackgroundTexture.render(0, 0);
+
+        gForegroundTexture.setAlpha(a);
+        gForegroundTexture.render(0, 0);
 
         SDL_RenderPresent(gRenderer);
       }
@@ -213,9 +220,17 @@ bool loadMedia()
 {
   bool loadingSuccessState = true;
 
-  const std::string texturePath = "data/textures/full.png";
-  if (!gTexture.loadFromFile(texturePath)) {
-    std::cout << "Failed to load sprite sheet texture." << std::endl;
+  const std::string foregroundTexturePath = "data/key_presses/up.bmp";
+  if (!gForegroundTexture.loadFromFile(foregroundTexturePath)) {
+    std::cout << "Failed to load foreground texture." << std::endl;
+    loadingSuccessState = false;
+  } else {
+    gForegroundTexture.setBlendMode(SDL_BLENDMODE_BLEND);
+  }
+
+  const std::string backgroundTexturePath = "data/key_presses/down.bmp";
+  if (!gBackgroundTexture.loadFromFile(backgroundTexturePath)) {
+    std::cout << "Failed to load background texture." << std::endl;
     loadingSuccessState = false;
   }
 
@@ -224,7 +239,8 @@ bool loadMedia()
 
 void closeApp()
 {
-  gTexture.free();
+  gForegroundTexture.free();
+  gBackgroundTexture.free();
 
   SDL_DestroyRenderer(gRenderer);
   SDL_DestroyWindow(gWindow);
