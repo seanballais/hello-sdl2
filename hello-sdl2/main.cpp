@@ -110,8 +110,9 @@ private:
   int height;
 };
 
-LTexture gForegroundTexture;
-LTexture gBackgroundTexture;
+const int NUM_WALKING_ANIMATION_FRAMES = 4;
+SDL_Rect gSpriteClips[NUM_WALKING_ANIMATION_FRAMES];
+LTexture gSpriteSheetTexture;
 
 bool initApp();
 bool loadMedia();
@@ -130,30 +131,13 @@ int main(int argc, char* args[])
     } else {
       bool shouldAppQuit = false;
       SDL_Event event;
-      uint8_t a = 255;
+      int frame = 0;
       while (!shouldAppQuit) {
         while (SDL_PollEvent(&event) != 0) {
           switch (event.type) {
             case SDL_QUIT:
               shouldAppQuit = true;
               break;
-            case SDL_KEYDOWN:
-              switch (event.key.keysym.sym) {
-                case SDLK_w:
-                  if (a + 32 > 255) {
-                    a = 255;
-                  } else {
-                    a += 32;
-                  }
-                  break;
-                case SDLK_s:
-                  if (a - 32 < 0) {
-                    a = 0;
-                  } else {
-                    a -= 32;
-                  }
-                  break;
-              }
             default:
               continue;
           }
@@ -162,12 +146,14 @@ int main(int argc, char* args[])
         SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
         SDL_RenderClear(gRenderer);
 
-        gBackgroundTexture.render(0, 0);
-
-        gForegroundTexture.setAlpha(a);
-        gForegroundTexture.render(0, 0);
+        SDL_Rect* currentClip = &gSpriteClips[frame / 4];
+        gSpriteSheetTexture.render((SCREEN_WIDTH - currentClip->w) / 2,
+                                   (SCREEN_HEIGHT - currentClip->h) / 2,
+                                   currentClip);
 
         SDL_RenderPresent(gRenderer);
+
+        frame = (frame + 1) % 16;        
       }
     }
   }
@@ -197,7 +183,9 @@ bool initApp()
     return false;
   }
 
-  gRenderer = SDL_CreateRenderer(gWindow, -1, SDL_RENDERER_ACCELERATED);
+  gRenderer = SDL_CreateRenderer(gWindow, -1,
+                                 SDL_RENDERER_ACCELERATED
+                                 | SDL_RENDERER_PRESENTVSYNC);
   if (gRenderer == nullptr) {
     std::cout << "Renderer could not be created. SDL Error: " << SDL_GetError()
               << std::endl;
@@ -220,18 +208,14 @@ bool loadMedia()
 {
   bool loadingSuccessState = true;
 
-  const std::string foregroundTexturePath = "data/key_presses/up.bmp";
-  if (!gForegroundTexture.loadFromFile(foregroundTexturePath)) {
-    std::cout << "Failed to load foreground texture." << std::endl;
+  const std::string spriteSheetTexturePath = "data/textures/walking.png";
+  if (!gSpriteSheetTexture.loadFromFile(spriteSheetTexturePath)) {
+    std::cout << "Failed to load sprite sheet texture." << std::endl;
     loadingSuccessState = false;
   } else {
-    gForegroundTexture.setBlendMode(SDL_BLENDMODE_BLEND);
-  }
-
-  const std::string backgroundTexturePath = "data/key_presses/down.bmp";
-  if (!gBackgroundTexture.loadFromFile(backgroundTexturePath)) {
-    std::cout << "Failed to load background texture." << std::endl;
-    loadingSuccessState = false;
+    for (int i = 0; i < NUM_WALKING_ANIMATION_FRAMES; i++) {
+      gSpriteClips[i] = {64 * i, 0, 64, 205};
+    }
   }
 
   return loadingSuccessState;
@@ -239,8 +223,7 @@ bool loadMedia()
 
 void closeApp()
 {
-  gForegroundTexture.free();
-  gBackgroundTexture.free();
+  gSpriteSheetTexture.free();
 
   SDL_DestroyRenderer(gRenderer);
   SDL_DestroyWindow(gWindow);
