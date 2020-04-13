@@ -1,4 +1,5 @@
 #include <cmath>
+#include <cstdint>
 #include <iostream>
 
 #include <SDL2/SDL.h>
@@ -65,6 +66,11 @@ public:
     }
   }
 
+  void setColor(uint8_t r, uint8_t g, uint8_t b)
+  {
+    SDL_SetTextureColorMod(this->texture, r, g, b);
+  }
+
   void render(int x, int y, SDL_Rect* clip = nullptr)
   {
     SDL_Rect renderQuad{x, y, this->width, this->height};
@@ -94,7 +100,7 @@ private:
   int height;
 };
 
-LTexture gSpriteSheetTexture;
+LTexture gTexture;
 
 bool initApp();
 bool loadMedia();
@@ -111,25 +117,38 @@ int main(int argc, char* args[])
     if (!loadMedia()) {
       std::cout << "Failed to load media." << std::endl;
     } else {
-      const int spriteFrameWidth = 32;
-      const int spriteFrameHeight = 32;
-      const int spriteXLoc = (SCREEN_WIDTH / 2) - (spriteFrameWidth / 2);
-      const int spriteYLoc = (SCREEN_HEIGHT / 2) - (spriteFrameHeight / 2);
-
-      int currSheetClipNum = 0;
-
-      SDL_Rect spriteClip{0, 0, spriteFrameWidth, spriteFrameHeight};
-
-      unsigned int prevAnimationTime = SDL_GetTicks();
-
       bool shouldAppQuit = false;
       SDL_Event event;
+      uint8_t r = 255;
+      uint8_t g = 255;
+      uint8_t b = 255;
       while (!shouldAppQuit) {
         while (SDL_PollEvent(&event) != 0) {
           switch (event.type) {
             case SDL_QUIT:
               shouldAppQuit = true;
               break;
+            case SDL_KEYDOWN:
+              switch (event.key.keysym.sym) {
+                case SDLK_q:
+                  r += 32;
+                  break;
+                case SDLK_w:
+                  g += 32;
+                  break;
+                case SDLK_e:
+                  b += 32;
+                  break;
+                case SDLK_a:
+                  r -= 32;
+                  break;
+                case SDLK_s:
+                  g -= 32;
+                  break;
+                case SDLK_d:
+                  b -= 32;
+                  break;
+              }
             default:
               continue;
           }
@@ -138,18 +157,8 @@ int main(int argc, char* args[])
         SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
         SDL_RenderClear(gRenderer);
 
-        gSpriteSheetTexture.render(spriteXLoc, spriteYLoc, &spriteClip);
-
-        unsigned int currentAnimationTime = SDL_GetTicks();
-
-        if ((currentAnimationTime - prevAnimationTime) > 83) {
-          currSheetClipNum = (currSheetClipNum + 1) % 16;
-          spriteClip.x = (currSheetClipNum % 4) * spriteFrameWidth;
-          spriteClip.y = static_cast<int>(
-                           floor(static_cast<float>(currSheetClipNum) / 4.f));
-          spriteClip.y = spriteClip.y * spriteFrameHeight;
-          prevAnimationTime = currentAnimationTime;
-        }
+        gTexture.setColor(r, g, b);
+        gTexture.render(0, 0);
 
         SDL_RenderPresent(gRenderer);
       }
@@ -204,8 +213,8 @@ bool loadMedia()
 {
   bool loadingSuccessState = true;
 
-  const std::string texturePath = "data/textures/spritesheet_caveman.png";
-  if (!gSpriteSheetTexture.loadFromFile(texturePath)) {
+  const std::string texturePath = "data/textures/full.png";
+  if (!gTexture.loadFromFile(texturePath)) {
     std::cout << "Failed to load sprite sheet texture." << std::endl;
     loadingSuccessState = false;
   }
@@ -215,7 +224,7 @@ bool loadMedia()
 
 void closeApp()
 {
-  gSpriteSheetTexture.free();
+  gTexture.free();
 
   SDL_DestroyRenderer(gRenderer);
   SDL_DestroyWindow(gWindow);
