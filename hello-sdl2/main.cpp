@@ -157,6 +157,12 @@ private:
 SDL_Rect gSpriteClips[BUTTON_SPRITE_TOTAL];
 LTexture gButtonSpriteSheetTexture;
 
+LTexture upTexture;
+LTexture downTexture;
+LTexture leftTexture;
+LTexture rightTexture;
+LTexture defaultTexture;
+
 class LButton
 {
 public:
@@ -240,23 +246,31 @@ int main(int argc, char* args[])
     } else {
       bool shouldAppQuit = false;
       SDL_Event event;
+      LTexture* currentTexture = nullptr;
       while (!shouldAppQuit) {
         while (SDL_PollEvent(&event) != 0) {
           if (event.type == SDL_QUIT) {
             shouldAppQuit = true;
           }
+        }
 
-          for (size_t i = 0; i < TOTAL_BUTTONS; i++) {
-            gButtons[i].handleEvent(&event);
-          }
+        const uint8_t* currentKeyStates = SDL_GetKeyboardState(nullptr);
+        if (currentKeyStates[SDL_SCANCODE_UP]) {
+          currentTexture = &upTexture;
+        } else if (currentKeyStates[SDL_SCANCODE_DOWN]) {
+          currentTexture = &downTexture;
+        } else if (currentKeyStates[SDL_SCANCODE_LEFT]) {
+          currentTexture = &leftTexture;
+        } else if (currentKeyStates[SDL_SCANCODE_RIGHT]) {
+          currentTexture = &rightTexture;
+        } else {
+          currentTexture = &defaultTexture;
         }
 
         SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
         SDL_RenderClear(gRenderer);
 
-        for (size_t i = 0; i < TOTAL_BUTTONS; i++) {
-          gButtons[i].render();
-        }
+        currentTexture->render(0, 0);
 
         SDL_RenderPresent(gRenderer);
       }
@@ -319,22 +333,39 @@ bool loadMedia()
 {
   bool loadingSuccessState = true;
 
-  const std::string spriteSheetTexturePath = "data/textures/button.png";
-  if (!gButtonSpriteSheetTexture.loadFromFile(spriteSheetTexturePath)) {
-    std::cout << "Failed to load texture. SDL_image Error: " << IMG_GetError()
-              << std::endl;
+  const std::string upTexturePath = "data/key_presses/up.bmp";
+  if (!upTexture.loadFromFile(upTexturePath)) {
+    std::cout << "Failed to load 'Up' texture. SDL_image Error: "
+              << IMG_GetError() << std::endl;
     loadingSuccessState = false;
   }
 
-  for (int i = 0; i < BUTTON_SPRITE_TOTAL; i++) {
-    gSpriteClips[i] = {0, BUTTON_HEIGHT * i, BUTTON_WIDTH, BUTTON_HEIGHT};
+  const std::string downTexturePath = "data/key_presses/down.bmp";
+  if (!downTexture.loadFromFile(downTexturePath)) {
+    std::cout << "Failed to load 'Down' texture. SDL_image Error: "
+              << IMG_GetError() << std::endl;
+    loadingSuccessState = false;
   }
 
-  std::array<int, 2> xPositions{0, 340};
-  std::array<int, 2> yPositions{0, 280};
-  for (size_t i = 0; i < TOTAL_BUTTONS; i++) {
-    gButtons[i] = {};
-    gButtons[i].setPosition(xPositions[i % 2], yPositions[i / 2]);
+  const std::string leftTexturePath = "data/key_presses/left.bmp";
+  if (!leftTexture.loadFromFile(leftTexturePath)) {
+    std::cout << "Failed to load 'Left' texture. SDL_image Error: "
+              << IMG_GetError() << std::endl;
+    loadingSuccessState = false;
+  }
+
+  const std::string rightTexturePath = "data/key_presses/right.bmp";
+  if (!rightTexture.loadFromFile(rightTexturePath)) {
+    std::cout << "Failed to load 'Right' texture. SDL_image Error: "
+              << IMG_GetError() << std::endl;
+    loadingSuccessState = false;
+  }
+
+  const std::string defaultTexturePath = "data/textures/sample_texture.png";
+  if (!defaultTexture.loadFromFile(defaultTexturePath)) {
+    std::cout << "Failed to load default texture. SDL_image Error: "
+              << IMG_GetError() << std::endl;
+    loadingSuccessState = false;
   }
 
   return loadingSuccessState;
@@ -343,6 +374,12 @@ bool loadMedia()
 void closeApp()
 {
   gButtonSpriteSheetTexture.free();
+
+  upTexture.free();
+  downTexture.free();
+  leftTexture.free();
+  rightTexture.free();
+  defaultTexture.free();
 
   TTF_CloseFont(gFont);
   gFont = nullptr;
