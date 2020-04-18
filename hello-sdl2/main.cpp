@@ -1,3 +1,4 @@
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <iostream>
@@ -9,10 +10,22 @@
 
 const int SCREEN_WIDTH = 640;
 const int SCREEN_HEIGHT = 480;
+const int BUTTON_WIDTH = 300;
+const int BUTTON_HEIGHT = 200;
+const int TOTAL_BUTTONS = 4;
 
 SDL_Window* gWindow = nullptr;
 SDL_Renderer* gRenderer = nullptr;
 TTF_Font* gFont = nullptr;
+
+enum LButtonSprite
+{
+  BUTTON_SPRITE_MOUSE_OUT = 0,
+  BUTTON_SPRITE_MOUSE_OVER_MOTION = 1,
+  BUTTON_SPRITE_MOUSE_DOWN = 2,
+  BUTTON_SPRITE_MOUSE_UP = 3,
+  BUTTON_SPRITE_TOTAL = 4
+};
 
 class LTexture
 {
@@ -141,7 +154,74 @@ private:
   int height;
 };
 
-LTexture gTextTexture;
+SDL_Rect gSpriteClips[BUTTON_SPRITE_TOTAL];
+LTexture gButtonSpriteSheetTexture;
+
+class LButton
+{
+public:
+  LButton()
+    : position({0, 0})
+    , currentSprite(BUTTON_SPRITE_MOUSE_OUT) {}
+
+  void setPosition(int x, int y)
+  {
+    this->position.x = x;
+    this->position.y = y;
+  }
+
+  void handleEvent(SDL_Event* event)
+  {
+    if (event->type == SDL_MOUSEMOTION
+        || event->type == SDL_MOUSEBUTTONDOWN
+        || event->type == SDL_MOUSEBUTTONUP) {
+      int x;
+      int y;
+      SDL_GetMouseState(&x, &y);
+
+      bool isMouseInsideButton = true;
+
+      if (x < this->position.x) {
+        isMouseInsideButton = false;
+      } else if (x > (this->position.x + BUTTON_WIDTH)) {
+        isMouseInsideButton = false;
+      } else if (y < this->position.y) {
+        isMouseInsideButton = false;
+      } else if (y > (this->position.y + BUTTON_HEIGHT)) {
+        isMouseInsideButton = false;
+      }
+
+      if (!isMouseInsideButton) {
+        this->currentSprite = BUTTON_SPRITE_MOUSE_OUT;
+      } else {
+        switch (event->type) {
+          case SDL_MOUSEMOTION:
+            this->currentSprite = BUTTON_SPRITE_MOUSE_OVER_MOTION;
+            break;
+          case SDL_MOUSEBUTTONDOWN:
+            this->currentSprite = BUTTON_SPRITE_MOUSE_DOWN;
+            break;
+          case SDL_MOUSEBUTTONUP:
+            this->currentSprite = BUTTON_SPRITE_MOUSE_UP;
+            break;
+        }
+      }
+    }
+  }
+
+  void render()
+  {
+    gButtonSpriteSheetTexture.render(this->position.x, this->position.y,
+                                     &gSpriteClips[this->currentSprite]);
+  }
+
+private:
+  SDL_Point position;
+
+  LButtonSprite currentSprite;
+};
+
+LButton gButtons[TOTAL_BUTTONS];
 
 bool initApp();
 bool loadMedia();
@@ -162,20 +242,21 @@ int main(int argc, char* args[])
       SDL_Event event;
       while (!shouldAppQuit) {
         while (SDL_PollEvent(&event) != 0) {
-          switch (event.type) {
-            case SDL_QUIT:
-              shouldAppQuit = true;
-              break;
-            default:
-              continue;
+          if (event.type == SDL_QUIT) {
+            shouldAppQuit = true;
+          }
+
+          for (size_t i = 0; i < TOTAL_BUTTONS; i++) {
+            gButtons[i].handleEvent(&event);
           }
         }
 
         SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
         SDL_RenderClear(gRenderer);
 
-        gTextTexture.render((SCREEN_WIDTH - gTextTexture.getWidth()) / 2,
-                            (SCREEN_HEIGHT - gTextTexture.getHeight()) / 2);
+        for (size_t i = 0; i < TOTAL_BUTTONS; i++) {
+          gButtons[i].render();
+        }
 
         SDL_RenderPresent(gRenderer);
       }
@@ -238,19 +319,22 @@ bool loadMedia()
 {
   bool loadingSuccessState = true;
 
-  const std::string fontPath = "data/fonts/Raleway-Light.ttf";
-  gFont = TTF_OpenFont(fontPath.c_str(), 28);
-  if (gFont == nullptr) {
-    std::cout << "Failed to load font. SDL_ttf Error: " << TTF_GetError()
+  const std::string spriteSheetTexturePath = "data/textures/button.png";
+  if (!gButtonSpriteSheetTexture.loadFromFile(spriteSheetTexturePath)) {
+    std::cout << "Failed to load texture. SDL_image Error: " << IMG_GetError()
               << std::endl;
     loadingSuccessState = false;
-  } else {
-    SDL_Color textColor {0, 0, 0};
-    if (!gTextTexture.loadFromRenderedText("Brown fox jump over good boi.",
-                                           textColor)) {
-      std::cout << "Failed to render text texture." << std::endl;
-      loadingSuccessState = false;
-    }
+  }
+
+  for (int i = 0; i < BUTTON_SPRITE_TOTAL; i++) {
+    gSpriteClips[i] = {0, BUTTON_HEIGHT * i, BUTTON_WIDTH, BUTTON_HEIGHT};
+  }
+
+  std::array<int, 2> xPositions{0, 340};
+  std::array<int, 2> yPositions{0, 280};
+  for (size_t i = 0; i < TOTAL_BUTTONS; i++) {
+    gButtons[i] = {};
+    gButtons[i].setPosition(xPositions[i % 2], yPositions[i / 2]);
   }
 
   return loadingSuccessState;
@@ -258,7 +342,7 @@ bool loadMedia()
 
 void closeApp()
 {
-  gTextTexture.free();
+  gButtonSpriteSheetTexture.free();
 
   TTF_CloseFont(gFont);
   gFont = nullptr;
