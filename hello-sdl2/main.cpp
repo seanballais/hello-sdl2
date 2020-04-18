@@ -81,7 +81,9 @@ public:
     SDL_SetTextureAlphaMod(this->texture, alpha);
   }
 
-  void render(int x, int y, SDL_Rect* clip = nullptr)
+  void render(int x, int y, SDL_Rect* clip = nullptr,
+              double angle = 0.0, SDL_Point* center = nullptr,
+              SDL_RendererFlip flip = SDL_FLIP_NONE)
   {
     SDL_Rect renderQuad{x, y, this->width, this->height};
 
@@ -90,7 +92,8 @@ public:
       renderQuad.h = clip->h;
     }
 
-    SDL_RenderCopy(gRenderer, this->texture, clip, &renderQuad);
+    SDL_RenderCopyEx(gRenderer, this->texture, clip, &renderQuad,
+                     angle, center, flip);
   }
 
   int getWidth()
@@ -110,9 +113,7 @@ private:
   int height;
 };
 
-const int NUM_WALKING_ANIMATION_FRAMES = 4;
-SDL_Rect gSpriteClips[NUM_WALKING_ANIMATION_FRAMES];
-LTexture gSpriteSheetTexture;
+LTexture gArrowTexture;
 
 bool initApp();
 bool loadMedia();
@@ -131,13 +132,32 @@ int main(int argc, char* args[])
     } else {
       bool shouldAppQuit = false;
       SDL_Event event;
-      int frame = 0;
+      double degrees = 0.0;
+      SDL_RendererFlip flipType = SDL_FLIP_NONE;
       while (!shouldAppQuit) {
         while (SDL_PollEvent(&event) != 0) {
           switch (event.type) {
             case SDL_QUIT:
               shouldAppQuit = true;
               break;
+            case SDL_KEYDOWN:
+              switch (event.key.keysym.sym) {
+                case SDLK_a:
+                  degrees -= 60;
+                  break;
+                case SDLK_d:
+                  degrees += 60;
+                  break;
+                case SDLK_q:
+                  flipType = SDL_FLIP_HORIZONTAL;
+                  break;
+                case SDLK_w:
+                  flipType = SDL_FLIP_NONE;
+                  break;
+                case SDLK_e:
+                  flipType = SDL_FLIP_VERTICAL;
+                  break;
+              }
             default:
               continue;
           }
@@ -146,14 +166,11 @@ int main(int argc, char* args[])
         SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
         SDL_RenderClear(gRenderer);
 
-        SDL_Rect* currentClip = &gSpriteClips[frame / 4];
-        gSpriteSheetTexture.render((SCREEN_WIDTH - currentClip->w) / 2,
-                                   (SCREEN_HEIGHT - currentClip->h) / 2,
-                                   currentClip);
+        gArrowTexture.render((SCREEN_WIDTH - gArrowTexture.getWidth()) / 2,
+                             (SCREEN_HEIGHT - gArrowTexture.getHeight()) / 2,
+                             nullptr, degrees, nullptr, flipType);
 
         SDL_RenderPresent(gRenderer);
-
-        frame = (frame + 1) % 16;        
       }
     }
   }
@@ -208,14 +225,10 @@ bool loadMedia()
 {
   bool loadingSuccessState = true;
 
-  const std::string spriteSheetTexturePath = "data/textures/walking.png";
-  if (!gSpriteSheetTexture.loadFromFile(spriteSheetTexturePath)) {
-    std::cout << "Failed to load sprite sheet texture." << std::endl;
+  const std::string arrowTexturePath = "data/textures/arrow.png";
+  if (!gArrowTexture.loadFromFile(arrowTexturePath)) {
+    std::cout << "Failed to load arrow texture." << std::endl;
     loadingSuccessState = false;
-  } else {
-    for (int i = 0; i < NUM_WALKING_ANIMATION_FRAMES; i++) {
-      gSpriteClips[i] = {64 * i, 0, 64, 205};
-    }
   }
 
   return loadingSuccessState;
@@ -223,7 +236,7 @@ bool loadMedia()
 
 void closeApp()
 {
-  gSpriteSheetTexture.free();
+  gArrowTexture.free();
 
   SDL_DestroyRenderer(gRenderer);
   SDL_DestroyWindow(gWindow);
