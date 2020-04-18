@@ -1,15 +1,18 @@
 #include <cmath>
 #include <cstdint>
 #include <iostream>
+#include <string>
 
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
+#include <SDL2/SDL_ttf.h>
 
 const int SCREEN_WIDTH = 640;
 const int SCREEN_HEIGHT = 480;
 
 SDL_Window* gWindow = nullptr;
 SDL_Renderer* gRenderer = nullptr;
+TTF_Font* gFont = nullptr;
 
 class LTexture
 {
@@ -53,6 +56,31 @@ public:
     this->texture = texture;
 
     return texture != nullptr;
+  }
+
+  bool loadFromRenderedText(std::string textureText, SDL_Color textColor)
+  {
+    free();
+
+    SDL_Surface* textSurface = TTF_RenderText_Solid(gFont, textureText.c_str(),
+                                                    textColor);
+    if (textSurface == nullptr) {
+      std::cout << "Unable to render text surface. SDL_ttf Error: "
+                << TTF_GetError() << std::endl;
+    } else {
+      this->texture = SDL_CreateTextureFromSurface(gRenderer, textSurface);
+      if (this->texture == nullptr) {
+        std::cout << "Unable to create texture from rendered text. SDL Error: "
+                  << SDL_GetError() << std::endl;
+      } else {
+        this->width = textSurface->w;
+        this->height = textSurface->h;
+      }
+
+      SDL_FreeSurface(textSurface);
+    }
+
+    return this->texture != nullptr;
   }
 
   void free()
@@ -113,7 +141,7 @@ private:
   int height;
 };
 
-LTexture gArrowTexture;
+LTexture gTextTexture;
 
 bool initApp();
 bool loadMedia();
@@ -132,32 +160,12 @@ int main(int argc, char* args[])
     } else {
       bool shouldAppQuit = false;
       SDL_Event event;
-      double degrees = 0.0;
-      SDL_RendererFlip flipType = SDL_FLIP_NONE;
       while (!shouldAppQuit) {
         while (SDL_PollEvent(&event) != 0) {
           switch (event.type) {
             case SDL_QUIT:
               shouldAppQuit = true;
               break;
-            case SDL_KEYDOWN:
-              switch (event.key.keysym.sym) {
-                case SDLK_a:
-                  degrees -= 60;
-                  break;
-                case SDLK_d:
-                  degrees += 60;
-                  break;
-                case SDLK_q:
-                  flipType = SDL_FLIP_HORIZONTAL;
-                  break;
-                case SDLK_w:
-                  flipType = SDL_FLIP_NONE;
-                  break;
-                case SDLK_e:
-                  flipType = SDL_FLIP_VERTICAL;
-                  break;
-              }
             default:
               continue;
           }
@@ -166,9 +174,8 @@ int main(int argc, char* args[])
         SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
         SDL_RenderClear(gRenderer);
 
-        gArrowTexture.render((SCREEN_WIDTH - gArrowTexture.getWidth()) / 2,
-                             (SCREEN_HEIGHT - gArrowTexture.getHeight()) / 2,
-                             nullptr, degrees, nullptr, flipType);
+        gTextTexture.render((SCREEN_WIDTH - gTextTexture.getWidth()) / 2,
+                            (SCREEN_HEIGHT - gTextTexture.getHeight()) / 2);
 
         SDL_RenderPresent(gRenderer);
       }
@@ -218,6 +225,12 @@ bool initApp()
     return false;
   }
 
+  if (TTF_Init() == -1) {
+    std::cout << "SDL_ttf could not initialize. SDL_ttf Error: "
+              << TTF_GetError() << std::endl;
+    return false;
+  }
+
   return true;
 }
 
@@ -225,10 +238,19 @@ bool loadMedia()
 {
   bool loadingSuccessState = true;
 
-  const std::string arrowTexturePath = "data/textures/arrow.png";
-  if (!gArrowTexture.loadFromFile(arrowTexturePath)) {
-    std::cout << "Failed to load arrow texture." << std::endl;
+  const std::string fontPath = "data/fonts/Raleway-Light.ttf";
+  gFont = TTF_OpenFont(fontPath.c_str(), 28);
+  if (gFont == nullptr) {
+    std::cout << "Failed to load font. SDL_ttf Error: " << TTF_GetError()
+              << std::endl;
     loadingSuccessState = false;
+  } else {
+    SDL_Color textColor {0, 0, 0};
+    if (!gTextTexture.loadFromRenderedText("Brown fox jump over good boi.",
+                                           textColor)) {
+      std::cout << "Failed to render text texture." << std::endl;
+      loadingSuccessState = false;
+    }
   }
 
   return loadingSuccessState;
@@ -236,13 +258,17 @@ bool loadMedia()
 
 void closeApp()
 {
-  gArrowTexture.free();
+  gTextTexture.free();
+
+  TTF_CloseFont(gFont);
+  gFont = nullptr;
 
   SDL_DestroyRenderer(gRenderer);
   SDL_DestroyWindow(gWindow);
   gWindow = nullptr;
   gRenderer = nullptr;
 
+  TTF_Quit();
   IMG_Quit();
   SDL_Quit();
 }
