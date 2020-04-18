@@ -6,6 +6,7 @@
 
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
+#include <SDL2/SDL_mixer.h>
 #include <SDL2/SDL_ttf.h>
 
 const int SCREEN_WIDTH = 640;
@@ -17,6 +18,12 @@ const int TOTAL_BUTTONS = 4;
 SDL_Window* gWindow = nullptr;
 SDL_Renderer* gRenderer = nullptr;
 TTF_Font* gFont = nullptr;
+Mix_Music* gMusic = nullptr;
+
+Mix_Chunk* gScratch = nullptr;
+Mix_Chunk* gHigh = nullptr;
+Mix_Chunk* gMedium = nullptr;
+Mix_Chunk* gLow = nullptr;
 
 enum LButtonSprite
 {
@@ -154,14 +161,9 @@ private:
   int height;
 };
 
+LTexture gPromptTexture;
 SDL_Rect gSpriteClips[BUTTON_SPRITE_TOTAL];
 LTexture gButtonSpriteSheetTexture;
-
-LTexture upTexture;
-LTexture downTexture;
-LTexture leftTexture;
-LTexture rightTexture;
-LTexture defaultTexture;
 
 class LButton
 {
@@ -246,31 +248,51 @@ int main(int argc, char* args[])
     } else {
       bool shouldAppQuit = false;
       SDL_Event event;
-      LTexture* currentTexture = nullptr;
       while (!shouldAppQuit) {
         while (SDL_PollEvent(&event) != 0) {
           if (event.type == SDL_QUIT) {
             shouldAppQuit = true;
-          }
-        }
+          } else if (event.type == SDL_KEYDOWN) {
+            switch (event.key.keysym.sym) {
+              case SDLK_1:
+                Mix_PlayChannel(-1, gHigh, 0);
+                break;
 
-        const uint8_t* currentKeyStates = SDL_GetKeyboardState(nullptr);
-        if (currentKeyStates[SDL_SCANCODE_UP]) {
-          currentTexture = &upTexture;
-        } else if (currentKeyStates[SDL_SCANCODE_DOWN]) {
-          currentTexture = &downTexture;
-        } else if (currentKeyStates[SDL_SCANCODE_LEFT]) {
-          currentTexture = &leftTexture;
-        } else if (currentKeyStates[SDL_SCANCODE_RIGHT]) {
-          currentTexture = &rightTexture;
-        } else {
-          currentTexture = &defaultTexture;
+              case SDLK_2:
+                Mix_PlayChannel(-1, gMedium, 0);
+                break;
+
+              case SDLK_3:
+                Mix_PlayChannel(-1, gLow, 0);
+                break;
+
+              case SDLK_4:
+                Mix_PlayChannel(-1, gScratch, 0);
+                break;
+
+              case SDLK_9:
+                if (Mix_PlayingMusic() == 0) {
+                  Mix_PlayMusic(gMusic, -1);
+                } else {
+                  if (Mix_PausedMusic() == 1) {
+                    Mix_ResumeMusic();
+                  } else {
+                    Mix_PauseMusic();
+                  }
+                }
+                break;
+
+              case SDLK_0:
+                Mix_HaltMusic();
+                break;
+            }
+          }
         }
 
         SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
         SDL_RenderClear(gRenderer);
 
-        currentTexture->render(0, 0);
+        gPromptTexture.render(0, 0);
 
         SDL_RenderPresent(gRenderer);
       }
@@ -284,7 +306,7 @@ int main(int argc, char* args[])
 
 bool initApp()
 {
-  if (SDL_Init(SDL_INIT_VIDEO) < 0) {
+  if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0) {
     std::cout << "SDL could not be initialized. SDL Error: " << SDL_GetError()
               << std::endl;
     return false;
@@ -326,6 +348,12 @@ bool initApp()
     return false;
   }
 
+  if (Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, 2048) < 0) {
+    std::cout << "SDL_mixer could not initialize. SDL_mixer Error: "
+              << Mix_GetError() << std::endl;
+    return false;
+  }
+
   return true;
 }
 
@@ -333,38 +361,49 @@ bool loadMedia()
 {
   bool loadingSuccessState = true;
 
-  const std::string upTexturePath = "data/key_presses/up.bmp";
-  if (!upTexture.loadFromFile(upTexturePath)) {
-    std::cout << "Failed to load 'Up' texture. SDL_image Error: "
-              << IMG_GetError() << std::endl;
+  const std::string gPromptTexturePath = "data/textures/prompt.png";
+  if (!gPromptTexture.loadFromFile(gPromptTexturePath)) {
+    std::cout << "Failed to load prompt texture." << std::endl;
     loadingSuccessState = false;
   }
 
-  const std::string downTexturePath = "data/key_presses/down.bmp";
-  if (!downTexture.loadFromFile(downTexturePath)) {
-    std::cout << "Failed to load 'Down' texture. SDL_image Error: "
-              << IMG_GetError() << std::endl;
+  const std::string gMusicPath = "data/music/beat.wav";
+  gMusic = Mix_LoadMUS(gMusicPath.c_str());
+  if (gMusic == nullptr) {
+    std::cout << "Failed to load beat music. SDL_mixer Error: "
+              << Mix_GetError() << std::endl;
     loadingSuccessState = false;
   }
 
-  const std::string leftTexturePath = "data/key_presses/left.bmp";
-  if (!leftTexture.loadFromFile(leftTexturePath)) {
-    std::cout << "Failed to load 'Left' texture. SDL_image Error: "
-              << IMG_GetError() << std::endl;
+  const std::string gScratchPath = "data/music/scratch.wav";
+  gScratch = Mix_LoadWAV(gScratchPath.c_str());
+  if (gScratch == nullptr) {
+    std::cout << "Failed to load scratch sound effect. SDL_mixer Error: "
+              << Mix_GetError() << std::endl;
     loadingSuccessState = false;
   }
 
-  const std::string rightTexturePath = "data/key_presses/right.bmp";
-  if (!rightTexture.loadFromFile(rightTexturePath)) {
-    std::cout << "Failed to load 'Right' texture. SDL_image Error: "
-              << IMG_GetError() << std::endl;
+  const std::string gHighPath = "data/music/high.wav";
+  gHigh = Mix_LoadWAV(gHighPath.c_str());
+  if (gHigh == nullptr) {
+    std::cout << "Failed to load high sound effect. SDL_mixer Error: "
+              << Mix_GetError() << std::endl;
     loadingSuccessState = false;
   }
 
-  const std::string defaultTexturePath = "data/textures/sample_texture.png";
-  if (!defaultTexture.loadFromFile(defaultTexturePath)) {
-    std::cout << "Failed to load default texture. SDL_image Error: "
-              << IMG_GetError() << std::endl;
+  const std::string gMediumPath = "data/music/medium.wav";
+  gMedium = Mix_LoadWAV(gMediumPath.c_str());
+  if (gMedium == nullptr) {
+    std::cout << "Failed to load medium sound effect. SDL_mixer Error: "
+              << Mix_GetError() << std::endl;
+    loadingSuccessState = false;
+  }
+
+  const std::string gLowPath = "data/music/low.wav";
+  gLow = Mix_LoadWAV(gLowPath.c_str());
+  if (gLow == nullptr) {
+    std::cout << "failed to load low sound effect. SDL_mixer Error: "
+              << Mix_GetError() << std::endl;
     loadingSuccessState = false;
   }
 
@@ -373,13 +412,19 @@ bool loadMedia()
 
 void closeApp()
 {
-  gButtonSpriteSheetTexture.free();
+  gPromptTexture.free();
 
-  upTexture.free();
-  downTexture.free();
-  leftTexture.free();
-  rightTexture.free();
-  defaultTexture.free();
+  Mix_FreeChunk(gScratch);
+  Mix_FreeChunk(gHigh);
+  Mix_FreeChunk(gMedium);
+  Mix_FreeChunk(gLow);
+  gScratch = nullptr;
+  gHigh = nullptr;
+  gMedium = nullptr;
+  gLow = nullptr;
+
+  Mix_FreeMusic(gMusic);
+  gMusic = nullptr;
 
   TTF_CloseFont(gFont);
   gFont = nullptr;
@@ -389,6 +434,7 @@ void closeApp()
   gWindow = nullptr;
   gRenderer = nullptr;
 
+  Mix_Quit();
   TTF_Quit();
   IMG_Quit();
   SDL_Quit();

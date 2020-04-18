@@ -7,7 +7,7 @@ app: setup_data hello-sdl2/main.cpp
 	g++ -Wall -g \
 		hello-sdl2/main.cpp \
 		-o bin/hello-sdl2 \
-		-lSDL2_image -lSDL2_ttf -lSDL2
+		-lSDL2_image -lSDL2_ttf -lSDL2_mixer -lSDL2
 
 setup_data:
 	mkdir -p bin/ bin/data/
