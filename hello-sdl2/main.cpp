@@ -15,6 +15,8 @@ const int SCREEN_HEIGHT = 480;
 const int BUTTON_WIDTH = 300;
 const int BUTTON_HEIGHT = 200;
 const int TOTAL_BUTTONS = 4;
+const int SCREEN_FPS = 60;
+const int SCREEN_TICKS_PER_FRAME = 1000 / SCREEN_FPS;
 
 SDL_Window* gWindow = nullptr;
 SDL_Renderer* gRenderer = nullptr;
@@ -331,10 +333,13 @@ int main(int argc, char* args[])
       SDL_Event event;
       SDL_Color textColor {0, 0, 0, 255};
       LTimer fpsTimer;
+      LTimer capTimer;
       std::stringstream timeText;
       int numFrames = 0;
       fpsTimer.start();
       while (!shouldAppQuit) {
+        capTimer.start();
+
         while (SDL_PollEvent(&event) != 0) {
           if (event.type == SDL_QUIT) {
             shouldAppQuit = true;
@@ -347,7 +352,7 @@ int main(int argc, char* args[])
         }
 
         timeText.str("");
-        timeText << "Average FPS: " << avgFPS;
+        timeText << "Average Capped FPS: " << avgFPS;
 
         if (!gTimeTextTexture.loadFromRenderedText(timeText.str(), textColor)) {
           std::cout << "Unable to render FPS texture." << std::endl;
@@ -362,6 +367,11 @@ int main(int argc, char* args[])
 
         SDL_RenderPresent(gRenderer);
         numFrames++;
+
+        int frameTicks = capTimer.getTicks();
+        if (frameTicks < SCREEN_TICKS_PER_FRAME) {
+          SDL_Delay(SCREEN_TICKS_PER_FRAME - frameTicks);
+        }
       }
     }
   }
@@ -393,7 +403,7 @@ bool initApp()
 
   gRenderer = SDL_CreateRenderer(gWindow, -1,
                                  SDL_RENDERER_ACCELERATED
-                                 | SDL_RENDERER_PRESENTVSYNC);
+                                 /*| SDL_RENDERER_PRESENTVSYNC*/);
   if (gRenderer == nullptr) {
     std::cout << "Renderer could not be created. SDL Error: " << SDL_GetError()
               << std::endl;
