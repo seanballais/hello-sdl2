@@ -311,6 +311,67 @@ private:
   bool isStartedState;
 };
 
+LTexture gDotTexture;
+
+class Dot
+{
+public:
+  static const int DOT_WIDTH = 20;
+  static const int DOT_HEIGHT = 20;
+
+  static const int DOT_VEL = 3;
+
+  Dot()
+    : posX(0)
+    , posY(0)
+    , velX(0)
+    , velY(0) {}
+
+  void handleEvent(SDL_Event* event)
+  {
+    if (event->type == SDL_KEYDOWN && event->key.repeat == 0) {
+      switch (event->key.keysym.sym) {
+        case SDLK_UP: this->velY -= DOT_VEL; break;
+        case SDLK_DOWN: this->velY += DOT_VEL; break;
+        case SDLK_LEFT: this->velX -= DOT_VEL; break;
+        case SDLK_RIGHT: this->velX += DOT_VEL; break;
+      }
+    } else if (event->type == SDL_KEYUP && event->key.repeat == 0) {
+      switch (event->key.keysym.sym) {
+        case SDLK_UP: this->velY += DOT_VEL; break;
+        case SDLK_DOWN: this->velY -= DOT_VEL; break;
+        case SDLK_LEFT: this->velX += DOT_VEL; break;
+        case SDLK_RIGHT: this->velX -= DOT_VEL; break;
+      }
+    }
+  }
+
+  void move()
+  {
+    this->posX += this->velX;
+    if ((this->posX < 0) || (this->posX + DOT_WIDTH > SCREEN_WIDTH)) {
+      this->posX -= this->velX;
+    }
+
+    this->posY += this->velY;
+    if ((this->posY < 0) || (this->posY + DOT_HEIGHT > SCREEN_HEIGHT)) {
+      this->posY -= this->velY;
+    }
+  }
+
+  void render()
+  {
+    gDotTexture.render(this->posX, this->posY);
+  }
+
+private:
+  int posX;
+  int posY;
+
+  int velX;
+  int velY;
+};
+
 LButton gButtons[TOTAL_BUTTONS];
 LTexture gTimeTextTexture;
 
@@ -331,47 +392,24 @@ int main(int argc, char* args[])
     } else {
       bool shouldAppQuit = false;
       SDL_Event event;
-      SDL_Color textColor {0, 0, 0, 255};
-      LTimer fpsTimer;
-      LTimer capTimer;
-      std::stringstream timeText;
-      int numFrames = 0;
-      fpsTimer.start();
+      Dot dot;
       while (!shouldAppQuit) {
-        capTimer.start();
-
         while (SDL_PollEvent(&event) != 0) {
           if (event.type == SDL_QUIT) {
             shouldAppQuit = true;
           }
+
+          dot.handleEvent(&event);
         }
 
-        float avgFPS = numFrames / (fpsTimer.getTicks() / 1000.f);
-        if (avgFPS > 2000000) {
-          avgFPS = 0;
-        }
-
-        timeText.str("");
-        timeText << "Average Capped FPS: " << avgFPS;
-
-        if (!gTimeTextTexture.loadFromRenderedText(timeText.str(), textColor)) {
-          std::cout << "Unable to render FPS texture." << std::endl;
-        }
+        dot.move();
 
         SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
         SDL_RenderClear(gRenderer);
 
-        gTimeTextTexture.render(
-          (SCREEN_WIDTH - gTimeTextTexture.getWidth()) / 2,
-          (SCREEN_HEIGHT - gTimeTextTexture.getHeight()) / 2);
+        dot.render();
 
         SDL_RenderPresent(gRenderer);
-        numFrames++;
-
-        int frameTicks = capTimer.getTicks();
-        if (frameTicks < SCREEN_TICKS_PER_FRAME) {
-          SDL_Delay(SCREEN_TICKS_PER_FRAME - frameTicks);
-        }
       }
     }
   }
@@ -438,11 +476,10 @@ bool loadMedia()
 {
   bool loadingSuccessState = true;
 
-  const std::string gFontPath = "data/fonts/Raleway-Light.ttf";
-  gFont = TTF_OpenFont(gFontPath.c_str(), 28);
-  if (gFont == nullptr) {
-    std::cout << "Failed to load font. SDL_ttf Error: " << TTF_GetError()
-              << std::endl;
+  const std::string gDotTexturePath = "data/textures/dot.bmp";
+  if (!gDotTexture.loadFromFile(gDotTexturePath)) {
+    std::cout << "Failed to load dot texture. SDL_image Error: "
+              << IMG_GetError() << std::endl;
     loadingSuccessState = false;
   }
 
@@ -451,7 +488,7 @@ bool loadMedia()
 
 void closeApp()
 {
-  gTimeTextTexture.free();
+  gDotTexture.free();
 
   TTF_CloseFont(gFont);
   gFont = nullptr;
