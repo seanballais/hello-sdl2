@@ -162,8 +162,6 @@ private:
   int height;
 };
 
-LTexture gStartPromptTexture;
-LTexture gPausePromptTexture;
 SDL_Rect gSpriteClips[BUTTON_SPRITE_TOTAL];
 LTexture gButtonSpriteSheetTexture;
 
@@ -332,50 +330,38 @@ int main(int argc, char* args[])
       bool shouldAppQuit = false;
       SDL_Event event;
       SDL_Color textColor {0, 0, 0, 255};
-      LTimer timer;
+      LTimer fpsTimer;
       std::stringstream timeText;
+      int numFrames = 0;
+      fpsTimer.start();
       while (!shouldAppQuit) {
         while (SDL_PollEvent(&event) != 0) {
           if (event.type == SDL_QUIT) {
             shouldAppQuit = true;
-          } else if (event.type == SDL_KEYDOWN) {
-            if (event.key.keysym.sym == SDLK_s) {
-              if (timer.isStarted()) {
-                timer.stop();
-              } else {
-                timer.start();
-              }
-            } else if (event.key.keysym.sym == SDLK_p) {
-              if (timer.isPaused()) {
-                timer.resume();
-              } else {
-                timer.pause();
-              }
-            }
           }
         }
 
+        float avgFPS = numFrames / (fpsTimer.getTicks() / 1000.f);
+        if (avgFPS > 2000000) {
+          avgFPS = 0;
+        }
+
         timeText.str("");
-        timeText << "Seconds since start time: "
-                 << (timer.getTicks() / 1000.f);;
+        timeText << "Average FPS: " << avgFPS;
 
         if (!gTimeTextTexture.loadFromRenderedText(timeText.str(), textColor)) {
-          std::cout << "Unable to render time texture." << std::endl;
+          std::cout << "Unable to render FPS texture." << std::endl;
         }
 
         SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
         SDL_RenderClear(gRenderer);
 
-        gStartPromptTexture.render(
-          (SCREEN_WIDTH - gStartPromptTexture.getWidth()) / 2, 0);
-        gPausePromptTexture.render(
-          (SCREEN_WIDTH - gPausePromptTexture.getWidth()) / 2,
-          (gStartPromptTexture.getHeight()));
         gTimeTextTexture.render(
           (SCREEN_WIDTH - gTimeTextTexture.getWidth()) / 2,
           (SCREEN_HEIGHT - gTimeTextTexture.getHeight()) / 2);
 
         SDL_RenderPresent(gRenderer);
+        numFrames++;
       }
     }
   }
@@ -448,20 +434,6 @@ bool loadMedia()
     std::cout << "Failed to load font. SDL_ttf Error: " << TTF_GetError()
               << std::endl;
     loadingSuccessState = false;
-  } else {
-    SDL_Color textColor {0, 0, 0, 255};
-
-    if (!gStartPromptTexture.loadFromRenderedText("Press S to start/stop timer",
-                                                  textColor)) {
-      std::cout << "Unable to render start prompt texture." << std::endl;
-      loadingSuccessState = false;
-    }
-
-    if (!gPausePromptTexture.loadFromRenderedText("Press P to pause/unpause "
-                                                  "timer", textColor)) {
-      std::cout << "Unable to render paused prompt texture." << std::endl;
-      loadingSuccessState = false;
-    }
   }
 
   return loadingSuccessState;
@@ -470,8 +442,6 @@ bool loadMedia()
 void closeApp()
 {
   gTimeTextTexture.free();
-  gStartPromptTexture.free();
-  gPausePromptTexture.free();
 
   TTF_CloseFont(gFont);
   gFont = nullptr;
