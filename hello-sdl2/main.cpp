@@ -168,6 +168,13 @@ private:
 SDL_Rect gSpriteClips[BUTTON_SPRITE_TOTAL];
 LTexture gButtonSpriteSheetTexture;
 
+struct Circle
+{
+  int x;
+  int y;
+  int r;
+};
+
 class LButton
 {
 public:
@@ -314,7 +321,8 @@ private:
 
 LTexture gDotTexture;
 
-bool checkCollision(std::vector<SDL_Rect>& a, std::vector<SDL_Rect>& b);
+bool checkCollision(Circle& a, Circle& b);
+bool checkCollision(Circle& a, SDL_Rect& b);
 
 class Dot
 {
@@ -329,42 +337,8 @@ public:
       , posY(y)
       , velX(0)
       , velY(0)
+      , collider({0, 0, DOT_WIDTH / 2})
   {
-    this->colliders.resize(11);
-
-    this->colliders[0].w = 6;
-    this->colliders[0].h = 1;
-
-    this->colliders[1].w = 10;
-    this->colliders[1].h = 1;
-
-    this->colliders[2].w = 14;
-    this->colliders[2].h = 1;
-
-    this->colliders[3].w = 16;
-    this->colliders[3].h = 2;
-
-    this->colliders[4].w = 18;
-    this->colliders[4].h = 2;
-
-    this->colliders[5].w = 20;
-    this->colliders[5].h = 6;
-
-    this->colliders[6].w = 18;
-    this->colliders[6].h = 2;
-
-    this->colliders[7].w = 16;
-    this->colliders[7].h = 2;
-
-    this->colliders[8].w = 14;
-    this->colliders[8].h = 1;
-
-    this->colliders[9].w = 10;
-    this->colliders[9].h = 1;
-
-    this->colliders[10].w = 6;
-    this->colliders[10].h = 1;
-
     this->shiftColliders();
   }
 
@@ -387,20 +361,24 @@ public:
     }
   }
 
-  void move(std::vector<SDL_Rect>& otherColliders)
+  void move(SDL_Rect& square, Circle& circle)
   {
     this->posX += this->velX;
     this->shiftColliders();
-    if ((this->posX < 0) || (this->posX + DOT_WIDTH > SCREEN_WIDTH)
-        || checkCollision(this->colliders, otherColliders)) {
+    if ((this->posX - this->collider.r < 0)
+        || (this->posX + this->collider.r > SCREEN_WIDTH)
+        || checkCollision(this->collider, square)
+        || checkCollision(this->collider, circle)) {
       this->posX -= this->velX;
       this->shiftColliders();
     }
 
     this->posY += this->velY;
     this->shiftColliders();
-    if ((this->posY < 0) || (this->posY + DOT_HEIGHT > SCREEN_HEIGHT)
-        || checkCollision(this->colliders, otherColliders)) {
+    if ((this->posY - this->collider.r < 0)
+        || (this->posY + this->collider.r > SCREEN_HEIGHT)
+        || checkCollision(this->collider, square)
+        || checkCollision(this->collider, circle)) {
       this->posY -= this->velY;
       this->shiftColliders();
     }
@@ -408,25 +386,20 @@ public:
 
   void render()
   {
-    gDotTexture.render(this->posX, this->posY);
+    gDotTexture.render(this->posX - this->collider.r,
+                       this->posY - this->collider.r);
   }
 
-  std::vector<SDL_Rect>& getColliders()
+  Circle& getCollider()
   {
-    return this->colliders;
+    return this->collider;
   }
 
 private:
   void shiftColliders()
   {
-    int rowOffset = 0;
-    for (size_t set = 0; set < this->colliders.size(); set++) {
-      this->colliders[set].x = this->posX
-                               + (DOT_WIDTH - this->colliders[set].w) / 2;
-      this->colliders[set].y = this->posY + rowOffset;
-
-      rowOffset += this->colliders[set].h;
-    }
+    this->collider.x = this->posX;
+    this->collider.y = this->posY;
   }
 
   int posX;
@@ -435,7 +408,7 @@ private:
   int velX;
   int velY;
 
-  std::vector<SDL_Rect> colliders;
+  Circle collider;
 };
 
 LButton gButtons[TOTAL_BUTTONS];
@@ -458,8 +431,10 @@ int main(int argc, char* args[])
     } else {
       bool shouldAppQuit = false;
       SDL_Event event;
-      Dot dot {0, 0};
+      Dot dot {Dot::DOT_WIDTH / 2, Dot::DOT_HEIGHT / 2};
       Dot otherDot {SCREEN_WIDTH / 4, SCREEN_HEIGHT / 4};
+
+      SDL_Rect wall {300, 40, 40, 400};
       while (!shouldAppQuit) {
         while (SDL_PollEvent(&event) != 0) {
           if (event.type == SDL_QUIT) {
@@ -469,10 +444,13 @@ int main(int argc, char* args[])
           dot.handleEvent(&event);
         }
 
-        dot.move(otherDot.getColliders());
+        dot.move(wall, otherDot.getCollider());
 
         SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
         SDL_RenderClear(gRenderer);
+
+        SDL_SetRenderDrawColor(gRenderer, 0x00, 0x00, 0x00, 0xFF);
+        SDL_RenderDrawRect(gRenderer, &wall);
 
         dot.render();
         otherDot.render();
@@ -572,39 +550,40 @@ void closeApp()
   SDL_Quit();
 }
 
-bool checkCollision(std::vector<SDL_Rect>& a, std::vector<SDL_Rect>& b)
+double distanceSquared(int x1, int y1, int x2, int y2)
 {
-  int leftA;
-  int leftB;
-  int rightA;
-  int rightB;
-  int topA;
-  int topB;
-  int bottomA;
-  int bottomB;
+  return ((x1 - x2) * (x1 - x2)) + ((y1 - y2) * (y1 - y2));
+}
 
-  for (auto& aBox : a) {
-    leftA = aBox.x;
-    rightA = aBox.x + aBox.w;
-    topA = aBox.y;
-    bottomA = aBox.y + aBox.h;
+bool checkCollision(Circle& a, Circle& b)
+{
+  int totalRadiusSquared = a.r + b.r;
+  totalRadiusSquared = totalRadiusSquared * totalRadiusSquared;
+  return (distanceSquared(a.x, a.y, b.x, b.y) < totalRadiusSquared);
+}
 
-    for (auto& bBox : b) {
-      leftB = bBox.x;
-      rightB = bBox.x + bBox.w;
-      topB = bBox.y;
-      bottomB = bBox.y + bBox.h;
+bool checkCollision(Circle& a, SDL_Rect& b)
+{
+  int closestX;
+  int closestY;
 
-      if (((bottomA <= topB)
-           || (topA >= bottomB)
-           || (rightA <= leftB)
-           || (leftA >= rightB)) == false) {
-        return true;
-      }
-    }
+  if (a.x < b.x) {
+    closestX = b.x;
+  } else if (a.x > b.x + b.w) {
+    closestX = b.x + b.w;
+  } else {
+    closestX = a.x;
   }
 
-  return false;
+  if (a.y < b.y) {
+    closestY = b.y;
+  } else if (a.y > b.y + b.h) {
+    closestY = b.y + b.h;
+  } else {
+    closestY = a.y;
+  }
+
+  return (distanceSquared(a.x, a.y, closestX, closestY) < ((a.r) * (a.r)));
 }
 
 SDL_Texture* loadTexture(std::string path)
