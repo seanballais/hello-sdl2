@@ -13,6 +13,8 @@
 
 const int SCREEN_WIDTH = 640;
 const int SCREEN_HEIGHT = 480;
+const int LEVEL_WIDTH = 1280;
+const int LEVEL_HEIGHT = 960;
 const int BUTTON_WIDTH = 300;
 const int BUTTON_HEIGHT = 200;
 const int TOTAL_BUTTONS = 4;
@@ -167,6 +169,8 @@ private:
 
 SDL_Rect gSpriteClips[BUTTON_SPRITE_TOTAL];
 LTexture gButtonSpriteSheetTexture;
+
+LTexture gBGTexture;
 
 struct Circle
 {
@@ -337,10 +341,7 @@ public:
       , posY(y)
       , velX(0)
       , velY(0)
-      , collider({0, 0, DOT_WIDTH / 2})
-  {
-    this->shiftColliders();
-  }
+      , collider({0, 0, DOT_WIDTH / 2}) {}
 
   void handleEvent(SDL_Event* event)
   {
@@ -361,33 +362,22 @@ public:
     }
   }
 
-  void move(SDL_Rect& square, Circle& circle)
+  void move()
   {
     this->posX += this->velX;
-    this->shiftColliders();
-    if ((this->posX - this->collider.r < 0)
-        || (this->posX + this->collider.r > SCREEN_WIDTH)
-        || checkCollision(this->collider, square)
-        || checkCollision(this->collider, circle)) {
+    if ((this->posX < 0) || (this->posX + DOT_WIDTH > LEVEL_WIDTH)) {
       this->posX -= this->velX;
-      this->shiftColliders();
     }
 
     this->posY += this->velY;
-    this->shiftColliders();
-    if ((this->posY - this->collider.r < 0)
-        || (this->posY + this->collider.r > SCREEN_HEIGHT)
-        || checkCollision(this->collider, square)
-        || checkCollision(this->collider, circle)) {
+    if ((this->posY < 0) || (this->posY + DOT_HEIGHT > LEVEL_HEIGHT)) {
       this->posY -= this->velY;
-      this->shiftColliders();
     }
   }
 
-  void render()
+  void render(int camX, int camY)
   {
-    gDotTexture.render(this->posX - this->collider.r,
-                       this->posY - this->collider.r);
+    gDotTexture.render(this->posX - camX, this->posY - camY);
   }
 
   Circle& getCollider()
@@ -395,13 +385,17 @@ public:
     return this->collider;
   }
 
-private:
-  void shiftColliders()
+  int getPosX()
   {
-    this->collider.x = this->posX;
-    this->collider.y = this->posY;
+    return this->posX;
   }
 
+  int getPosY()
+  {
+    return this->posY;
+  }
+
+private:
   int posX;
   int posY;
 
@@ -432,9 +426,8 @@ int main(int argc, char* args[])
       bool shouldAppQuit = false;
       SDL_Event event;
       Dot dot {Dot::DOT_WIDTH / 2, Dot::DOT_HEIGHT / 2};
-      Dot otherDot {SCREEN_WIDTH / 4, SCREEN_HEIGHT / 4};
 
-      SDL_Rect wall {300, 40, 40, 400};
+      SDL_Rect camera {0, 0, SCREEN_WIDTH, SCREEN_HEIGHT};
       while (!shouldAppQuit) {
         while (SDL_PollEvent(&event) != 0) {
           if (event.type == SDL_QUIT) {
@@ -444,16 +437,34 @@ int main(int argc, char* args[])
           dot.handleEvent(&event);
         }
 
-        dot.move(wall, otherDot.getCollider());
+        dot.move();
+
+        // Center camera over dot.
+        camera.x = (dot.getPosX() + Dot::DOT_WIDTH / 2) - (SCREEN_WIDTH / 2);
+        camera.y = (dot.getPosY() + Dot::DOT_HEIGHT / 2) - (SCREEN_HEIGHT / 2);
+
+        if (camera.x < 0) {
+          camera.x = 0;
+        }
+
+        if (camera.y < 0) {
+          camera.y = 0;
+        }
+
+        if (camera.x > LEVEL_WIDTH - camera.w) {
+          camera.x = LEVEL_WIDTH - camera.w;
+        }
+
+        if (camera.y > LEVEL_HEIGHT - camera.h) {
+          camera.y = LEVEL_HEIGHT - camera.h;
+        }
 
         SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
         SDL_RenderClear(gRenderer);
 
-        SDL_SetRenderDrawColor(gRenderer, 0x00, 0x00, 0x00, 0xFF);
-        SDL_RenderDrawRect(gRenderer, &wall);
+        gBGTexture.render(0, 0, &camera);
 
-        dot.render();
-        otherDot.render();
+        dot.render(camera.x, camera.y);
 
         SDL_RenderPresent(gRenderer);
       }
@@ -529,12 +540,20 @@ bool loadMedia()
     loadingSuccessState = false;
   }
 
+  const std::string gBGTexturePath = "data/textures/bg.png";
+  if (!gBGTexture.loadFromFile(gBGTexturePath)) {
+    std::cout << "Failed to load background texture. SDL_image Error: "
+              << IMG_GetError() << std::endl;
+    loadingSuccessState = false;
+  }
+
   return loadingSuccessState;
 }
 
 void closeApp()
 {
   gDotTexture.free();
+  gBGTexture.free();
 
   TTF_CloseFont(gFont);
   gFont = nullptr;
