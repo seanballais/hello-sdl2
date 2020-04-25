@@ -313,6 +313,8 @@ private:
 
 LTexture gDotTexture;
 
+bool checkCollision(SDL_Rect a, SDL_Rect b);
+
 class Dot
 {
 public:
@@ -325,7 +327,8 @@ public:
     : posX(0)
     , posY(0)
     , velX(0)
-    , velY(0) {}
+    , velY(0)
+    , collider({0, 0, DOT_WIDTH, DOT_HEIGHT}) {}
 
   void handleEvent(SDL_Event* event)
   {
@@ -346,16 +349,22 @@ public:
     }
   }
 
-  void move()
+  void move(SDL_Rect& wall)
   {
     this->posX += this->velX;
-    if ((this->posX < 0) || (this->posX + DOT_WIDTH > SCREEN_WIDTH)) {
+    this->collider.x = this->posX;
+    if ((this->posX < 0) || (this->posX + DOT_WIDTH > SCREEN_WIDTH)
+        || checkCollision(this->collider, wall)) {
       this->posX -= this->velX;
+      this->collider.x = this->posX;
     }
 
     this->posY += this->velY;
-    if ((this->posY < 0) || (this->posY + DOT_HEIGHT > SCREEN_HEIGHT)) {
+    this->collider.y = this->posY;
+    if ((this->posY < 0) || (this->posY + DOT_HEIGHT > SCREEN_HEIGHT)
+        || checkCollision(this->collider, wall)) {
       this->posY -= this->velY;
+      this->collider.y = this->posY;
     }
   }
 
@@ -370,6 +379,8 @@ private:
 
   int velX;
   int velY;
+
+  SDL_Rect collider;
 };
 
 LButton gButtons[TOTAL_BUTTONS];
@@ -393,6 +404,7 @@ int main(int argc, char* args[])
       bool shouldAppQuit = false;
       SDL_Event event;
       Dot dot;
+      SDL_Rect wall {300, 40, 40, 400};
       while (!shouldAppQuit) {
         while (SDL_PollEvent(&event) != 0) {
           if (event.type == SDL_QUIT) {
@@ -402,10 +414,13 @@ int main(int argc, char* args[])
           dot.handleEvent(&event);
         }
 
-        dot.move();
+        dot.move(wall);
 
         SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
         SDL_RenderClear(gRenderer);
+
+        SDL_SetRenderDrawColor(gRenderer, 0x00, 0x00, 0x00, 0xFF);
+        SDL_RenderDrawRect(gRenderer, &wall);
 
         dot.render();
 
@@ -502,6 +517,37 @@ void closeApp()
   TTF_Quit();
   IMG_Quit();
   SDL_Quit();
+}
+
+bool checkCollision(SDL_Rect a, SDL_Rect b)
+{
+  int leftA;
+  int leftB;
+  int rightA;
+  int rightB;
+  int topA;
+  int topB;
+  int bottomA;
+  int bottomB;
+
+  leftA = a.x;
+  rightA = a.x + a.w;
+  topA = a.y;
+  bottomA = a.y + a.h;
+
+  leftB = b.x;
+  rightB = b.x + b.w;
+  topB = b.y;
+  bottomB = b.y + b.h;
+
+  if ((bottomA <= topB)
+      || (topA >= bottomB)
+      || (rightA <= leftB)
+      || (leftA >= rightB)) {
+    return false;
+  }
+
+  return true;
 }
 
 SDL_Texture* loadTexture(std::string path)
