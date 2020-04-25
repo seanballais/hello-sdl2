@@ -1,5 +1,10 @@
 # hello-sdl2
+_Copyright (C) 2020 Sean Ballais
+
 Code I've written while learning about SDL 2.
+
+## Using My Code
+The code is not licensed under any open source license. It used to be under the MIT license. However, since I am basing this code from Lazy Foo's SDL 2 tutorial and Lazy Foo recommended it, the code will only be copyrighted to me, but the code may still be viewed by anyone. If you would like to use any portion of the code, please contact me via [sfballais123@gmail.com](mailto:sfballais123@gmail.com) and let me know which portions will be used. Many portions are by Lazy Foo, which means you might have to ask permission from him, or have to consult his [FAQ](http://lazyfoo.net/faq.php). Some are either mine or my modification of Lazy Foo's code.
 
 ## Assets Used
 The assets in this repository are a mix of assets created by me and third-party assets sourced from different websites. Please refer to the [Credits](#credits) to know more about where I obtained third-party assets.
