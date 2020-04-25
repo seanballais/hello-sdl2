@@ -334,7 +334,7 @@ public:
   static const int DOT_WIDTH = 20;
   static const int DOT_HEIGHT = 20;
 
-  static const int DOT_VEL = 1;
+  static const int DOT_VEL = 10;
 
   Dot(int x, int y)
       : posX(x)
@@ -365,19 +365,19 @@ public:
   void move()
   {
     this->posX += this->velX;
-    if ((this->posX < 0) || (this->posX + DOT_WIDTH > LEVEL_WIDTH)) {
+    if ((this->posX < 0) || (this->posX + DOT_WIDTH > SCREEN_WIDTH)) {
       this->posX -= this->velX;
     }
 
     this->posY += this->velY;
-    if ((this->posY < 0) || (this->posY + DOT_HEIGHT > LEVEL_HEIGHT)) {
+    if ((this->posY < 0) || (this->posY + DOT_HEIGHT > SCREEN_HEIGHT)) {
       this->posY -= this->velY;
     }
   }
 
-  void render(int camX, int camY)
+  void render()
   {
-    gDotTexture.render(this->posX - camX, this->posY - camY);
+    gDotTexture.render(this->posX, this->posY);
   }
 
   Circle& getCollider()
@@ -426,8 +426,8 @@ int main(int argc, char* args[])
       bool shouldAppQuit = false;
       SDL_Event event;
       Dot dot {Dot::DOT_WIDTH / 2, Dot::DOT_HEIGHT / 2};
+      int scrollingOffset = 0;
 
-      SDL_Rect camera {0, 0, SCREEN_WIDTH, SCREEN_HEIGHT};
       while (!shouldAppQuit) {
         while (SDL_PollEvent(&event) != 0) {
           if (event.type == SDL_QUIT) {
@@ -439,32 +439,18 @@ int main(int argc, char* args[])
 
         dot.move();
 
-        // Center camera over dot.
-        camera.x = (dot.getPosX() + Dot::DOT_WIDTH / 2) - (SCREEN_WIDTH / 2);
-        camera.y = (dot.getPosY() + Dot::DOT_HEIGHT / 2) - (SCREEN_HEIGHT / 2);
-
-        if (camera.x < 0) {
-          camera.x = 0;
-        }
-
-        if (camera.y < 0) {
-          camera.y = 0;
-        }
-
-        if (camera.x > LEVEL_WIDTH - camera.w) {
-          camera.x = LEVEL_WIDTH - camera.w;
-        }
-
-        if (camera.y > LEVEL_HEIGHT - camera.h) {
-          camera.y = LEVEL_HEIGHT - camera.h;
+        scrollingOffset--;
+        if (scrollingOffset < -gBGTexture.getWidth()) {
+          scrollingOffset = 0;
         }
 
         SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
         SDL_RenderClear(gRenderer);
 
-        gBGTexture.render(0, 0, &camera);
+        gBGTexture.render(scrollingOffset, 0);
+        gBGTexture.render(scrollingOffset + gBGTexture.getWidth(), 0);
 
-        dot.render(camera.x, camera.y);
+        dot.render();
 
         SDL_RenderPresent(gRenderer);
       }
@@ -540,7 +526,7 @@ bool loadMedia()
     loadingSuccessState = false;
   }
 
-  const std::string gBGTexturePath = "data/textures/bg.png";
+  const std::string gBGTexturePath = "data/textures/scrolling-bg.png";
   if (!gBGTexture.loadFromFile(gBGTexturePath)) {
     std::cout << "Failed to load background texture. SDL_image Error: "
               << IMG_GetError() << std::endl;
