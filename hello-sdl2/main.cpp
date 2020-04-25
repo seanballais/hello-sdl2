@@ -4,6 +4,7 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <vector>
 
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
@@ -313,7 +314,7 @@ private:
 
 LTexture gDotTexture;
 
-bool checkCollision(SDL_Rect a, SDL_Rect b);
+bool checkCollision(std::vector<SDL_Rect>& a, std::vector<SDL_Rect>& b);
 
 class Dot
 {
@@ -321,50 +322,87 @@ public:
   static const int DOT_WIDTH = 20;
   static const int DOT_HEIGHT = 20;
 
-  static const int DOT_VEL = 3;
+  static const int DOT_VEL = 1;
 
-  Dot()
-    : posX(0)
-    , posY(0)
-    , velX(0)
-    , velY(0)
-    , collider({0, 0, DOT_WIDTH, DOT_HEIGHT}) {}
+  Dot(int x, int y)
+      : posX(x)
+      , posY(y)
+      , velX(0)
+      , velY(0)
+  {
+    this->colliders.resize(11);
+
+    this->colliders[0].w = 6;
+    this->colliders[0].h = 1;
+
+    this->colliders[1].w = 10;
+    this->colliders[1].h = 1;
+
+    this->colliders[2].w = 14;
+    this->colliders[2].h = 1;
+
+    this->colliders[3].w = 16;
+    this->colliders[3].h = 2;
+
+    this->colliders[4].w = 18;
+    this->colliders[4].h = 2;
+
+    this->colliders[5].w = 20;
+    this->colliders[5].h = 6;
+
+    this->colliders[6].w = 18;
+    this->colliders[6].h = 2;
+
+    this->colliders[7].w = 16;
+    this->colliders[7].h = 2;
+
+    this->colliders[8].w = 14;
+    this->colliders[8].h = 1;
+
+    this->colliders[9].w = 10;
+    this->colliders[9].h = 1;
+
+    this->colliders[10].w = 6;
+    this->colliders[10].h = 1;
+
+    this->shiftColliders();
+  }
 
   void handleEvent(SDL_Event* event)
   {
     if (event->type == SDL_KEYDOWN && event->key.repeat == 0) {
       switch (event->key.keysym.sym) {
-        case SDLK_UP: this->velY -= DOT_VEL; break;
-        case SDLK_DOWN: this->velY += DOT_VEL; break;
-        case SDLK_LEFT: this->velX -= DOT_VEL; break;
-        case SDLK_RIGHT: this->velX += DOT_VEL; break;
+        case SDLK_w: this->velY -= DOT_VEL; break;
+        case SDLK_s: this->velY += DOT_VEL; break;
+        case SDLK_a: this->velX -= DOT_VEL; break;
+        case SDLK_d: this->velX += DOT_VEL; break;
       }
     } else if (event->type == SDL_KEYUP && event->key.repeat == 0) {
       switch (event->key.keysym.sym) {
-        case SDLK_UP: this->velY += DOT_VEL; break;
-        case SDLK_DOWN: this->velY -= DOT_VEL; break;
-        case SDLK_LEFT: this->velX += DOT_VEL; break;
-        case SDLK_RIGHT: this->velX -= DOT_VEL; break;
+        case SDLK_w: this->velY += DOT_VEL; break;
+        case SDLK_s: this->velY -= DOT_VEL; break;
+        case SDLK_a: this->velX += DOT_VEL; break;
+        case SDLK_d: this->velX -= DOT_VEL; break;
       }
     }
   }
 
-  void move(SDL_Rect& wall)
+  void move(std::vector<SDL_Rect>& otherColliders)
   {
     this->posX += this->velX;
-    this->collider.x = this->posX;
+    this->shiftColliders();
     if ((this->posX < 0) || (this->posX + DOT_WIDTH > SCREEN_WIDTH)
-        || checkCollision(this->collider, wall)) {
+        || checkCollision(this->colliders, otherColliders)) {
       this->posX -= this->velX;
-      this->collider.x = this->posX;
+      this->shiftColliders();
     }
 
     this->posY += this->velY;
-    this->collider.y = this->posY;
+    this->shiftColliders();
     if ((this->posY < 0) || (this->posY + DOT_HEIGHT > SCREEN_HEIGHT)
-        || checkCollision(this->collider, wall)) {
+        || checkCollision(this->colliders, otherColliders)) {
       this->posY -= this->velY;
-      this->collider.y = this->posY;
+      this->shiftColliders();
     }
   }
 
@@ -373,14 +411,31 @@ public:
     gDotTexture.render(this->posX, this->posY);
   }
 
+  std::vector<SDL_Rect>& getColliders()
+  {
+    return this->colliders;
+  }
+
 private:
+  void shiftColliders()
+  {
+    int rowOffset = 0;
+    for (size_t set = 0; set < this->colliders.size(); set++) {
+      this->colliders[set].x = this->posX
+                               + (DOT_WIDTH - this->colliders[set].w) / 2;
+      this->colliders[set].y = this->posY + rowOffset;
+
+      rowOffset += this->colliders[set].h;
+    }
+  }
+
   int posX;
   int posY;
 
   int velX;
   int velY;
 
-  SDL_Rect collider;
+  std::vector<SDL_Rect> colliders;
 };
 
 LButton gButtons[TOTAL_BUTTONS];
@@ -403,8 +458,8 @@ int main(int argc, char* args[])
     } else {
       bool shouldAppQuit = false;
       SDL_Event event;
-      Dot dot;
-      SDL_Rect wall {300, 40, 40, 400};
+      Dot dot {0, 0};
+      Dot otherDot {SCREEN_WIDTH / 4, SCREEN_HEIGHT / 4};
       while (!shouldAppQuit) {
         while (SDL_PollEvent(&event) != 0) {
           if (event.type == SDL_QUIT) {
@@ -414,15 +469,13 @@ int main(int argc, char* args[])
           dot.handleEvent(&event);
         }
 
-        dot.move(wall);
+        dot.move(otherDot.getColliders());
 
         SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
         SDL_RenderClear(gRenderer);
 
-        SDL_SetRenderDrawColor(gRenderer, 0x00, 0x00, 0x00, 0xFF);
-        SDL_RenderDrawRect(gRenderer, &wall);
-
         dot.render();
+        otherDot.render();
 
         SDL_RenderPresent(gRenderer);
       }
@@ -519,7 +572,7 @@ void closeApp()
   SDL_Quit();
 }
 
-bool checkCollision(SDL_Rect a, SDL_Rect b)
+bool checkCollision(std::vector<SDL_Rect>& a, std::vector<SDL_Rect>& b)
 {
   int leftA;
   int leftB;
@@ -530,24 +583,28 @@ bool checkCollision(SDL_Rect a, SDL_Rect b)
   int bottomA;
   int bottomB;
 
-  leftA = a.x;
-  rightA = a.x + a.w;
-  topA = a.y;
-  bottomA = a.y + a.h;
+  for (auto& aBox : a) {
+    leftA = aBox.x;
+    rightA = aBox.x + aBox.w;
+    topA = aBox.y;
+    bottomA = aBox.y + aBox.h;
 
-  leftB = b.x;
-  rightB = b.x + b.w;
-  topB = b.y;
-  bottomB = b.y + b.h;
+    for (auto& bBox : b) {
+      leftB = bBox.x;
+      rightB = bBox.x + bBox.w;
+      topB = bBox.y;
+      bottomB = bBox.y + bBox.h;
 
-  if ((bottomA <= topB)
-      || (topA >= bottomB)
-      || (rightA <= leftB)
-      || (leftA >= rightB)) {
-    return false;
+      if (((bottomA <= topB)
+           || (topA >= bottomB)
+           || (rightA <= leftB)
+           || (leftA >= rightB)) == false) {
+        return true;
+      }
+    }
   }
 
-  return true;
+  return false;
 }
 
 SDL_Texture* loadTexture(std::string path)
