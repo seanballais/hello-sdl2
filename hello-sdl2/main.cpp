@@ -417,6 +417,10 @@ void closeApp();
 SDL_Surface* loadSurface(std::string path);
 SDL_Texture* loadTexture(std::string path);
 
+const int TOTAL_DATA = 10;
+int32_t gData[TOTAL_DATA];
+LTexture gDataTextures[TOTAL_DATA];
+
 int main(int argc, char* args[])
 {
   if (!initApp()) {
@@ -429,48 +433,54 @@ int main(int argc, char* args[])
       SDL_Event event;
       
       SDL_Color textColour {0, 0, 0, 0xFF};
+      SDL_Color highlightColour {0xFF, 0, 0, 0xFF};
+
+      int currentData = 0;
 
       std::string inputText = "Some Text";
       gInputTextTexture.loadFromRenderedText(inputText, textColour);
 
       gPromptTextTexture.loadFromRenderedText("Enter Text:", textColour);
 
-      SDL_StartTextInput();
-
       while (!shouldAppQuit) {
-        bool renderText = false;
         while (SDL_PollEvent(&event) != 0) {
           if (event.type == SDL_QUIT) {
             shouldAppQuit = true;
           } else if (event.type == SDL_KEYDOWN) {
-            if (event.key.keysym.sym == SDLK_BACKSPACE
-                && (inputText.length() > 0)) {
-              inputText.pop_back();
-              renderText = true;
-            } else if (event.key.keysym.sym == SDLK_c
-                       && SDL_GetModState() & KMOD_CTRL) {
-              SDL_SetClipboardText(inputText.c_str());
-            } else if (event.key.keysym.sym == SDLK_v
-                       && SDL_GetModState() & KMOD_CTRL) {
-              inputText = SDL_GetClipboardText();
-              renderText = true;
-            }
-          } else if (event.type == SDL_TEXTINPUT) {
-            if (!(SDL_GetModState() & KMOD_CTRL
-                  && (event.text.text[0] == 'c' || event.text.text[0] == 'C'
-                      || event.text.text[0] == 'v' || event.text.text[0] == 'V')
-               )) {
-              inputText += event.text.text;
-              renderText = true;
-            }
-          }
-        }
+            switch (event.key.keysym.sym) {
+              case SDLK_w:
+                gDataTextures[currentData].loadFromRenderedText(
+                  std::to_string(gData[currentData]), textColour);
+                currentData--;
+                if (currentData < 0) {
+                  currentData = TOTAL_DATA - 1;
+                }
 
-        if (renderText) {
-          if (inputText != "") {
-            gInputTextTexture.loadFromRenderedText(inputText, textColour);
-          } else {
-            gInputTextTexture.loadFromRenderedText(" ", textColour);
+                gDataTextures[currentData].loadFromRenderedText(
+                  std::to_string(gData[currentData]), highlightColour);
+                break;
+              case SDLK_s:
+                gDataTextures[currentData].loadFromRenderedText(
+                  std::to_string(gData[currentData]), textColour);
+                currentData++;
+                if (currentData == TOTAL_DATA) {
+                  currentData = 0;
+                }
+
+                gDataTextures[currentData].loadFromRenderedText(
+                  std::to_string(gData[currentData]), highlightColour);
+                break;
+              case SDLK_a:
+                gData[currentData]--;
+                gDataTextures[currentData].loadFromRenderedText(
+                  std::to_string(gData[currentData]), highlightColour);
+                break;
+              case SDLK_d:
+                gData[currentData]++;
+                gDataTextures[currentData].loadFromRenderedText(
+                  std::to_string(gData[currentData]), highlightColour);
+                break;
+            }
           }
         }
 
@@ -479,15 +489,14 @@ int main(int argc, char* args[])
 
         gPromptTextTexture.render(
           (SCREEN_WIDTH - gPromptTextTexture.getWidth()) / 2, 0);
-
-        gInputTextTexture.render(
-          (SCREEN_WIDTH - gInputTextTexture.getWidth()) / 2,
-          gPromptTextTexture.getHeight());
+        for (int i = 0; i < TOTAL_DATA; i++) {
+          gDataTextures[i].render(
+            (SCREEN_WIDTH - gDataTextures[i].getWidth()) / 2,
+            gPromptTextTexture.getHeight() + gDataTextures[i].getHeight() * i);
+        }
 
         SDL_RenderPresent(gRenderer);
       }
-
-      SDL_StopTextInput();
     }
   }
 
@@ -574,11 +583,60 @@ bool loadMedia()
     loadingSuccessState = false;
   }
 
+  SDL_RWops* file = SDL_RWFromFile("data/files/nums.bin", "r+b");
+  if (file == nullptr) {
+    std::cout << "Warning: Unable to open file. SDL_Error: " << SDL_GetError()
+              << std::endl;
+
+    file = SDL_RWFromFile("data/files/nums.bin", "w+b");
+    if (file != nullptr) {
+      std::cout << "New file created." << std::endl;
+
+      for (int i = 0; i < TOTAL_DATA; i++) {
+        gData[i] = 0;
+        SDL_RWwrite(file, &gData[i], sizeof(int32_t), 1);
+      }
+
+      SDL_RWclose(file);
+    } else {
+      std::cout << "Error! Unable to create file. SDL Error: " << SDL_GetError()
+                << std::endl;
+      loadingSuccessState = false;
+    }
+  } else {
+    std::cout << "Reading file..." << std::endl;
+    for (int i = 0; i < TOTAL_DATA; i++) {
+      SDL_RWread(file, &gData[i], sizeof(int32_t), 1);
+    }
+
+    SDL_RWclose(file);
+  }
+
+  SDL_Color highlightColour {0xFF, 0, 0, 0xFF};
+  SDL_Color textColour {0, 0, 0, 0xFF};
+  gDataTextures[0].loadFromRenderedText(std::to_string(gData[0]),
+                                        highlightColour);
+  for (int i = 1; i < TOTAL_DATA; i++) {
+    gDataTextures[i].loadFromRenderedText(std::to_string(gData[i]), textColour);
+  }
+
   return loadingSuccessState;
 }
 
 void closeApp()
 {
+  SDL_RWops* file = SDL_RWFromFile("data/files/nums.bin", "w+b");
+  if (file != nullptr) {
+    for (int i = 0; i < TOTAL_DATA; i++) {
+      SDL_RWwrite(file, &gData[i], sizeof(int32_t), 1);
+    }
+
+    SDL_RWclose(file);
+  } else {
+    std::cout << "Error: Unable to save file. SDL Error: " << SDL_GetError()
+              << std::endl;
+  }
+
   gDotTexture.free();
   gBGTexture.free();
 
