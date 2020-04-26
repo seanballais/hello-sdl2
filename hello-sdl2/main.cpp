@@ -421,6 +421,38 @@ const int TOTAL_DATA = 10;
 int32_t gData[TOTAL_DATA];
 LTexture gDataTextures[TOTAL_DATA];
 
+const int MAX_RECORDING_DEVICES = 10;
+const int MAX_RECORDING_SECONDS = 5;
+const int RECORDING_BUFFER_SECONDS = MAX_RECORDING_SECONDS + 1;
+
+enum RecordingState
+{
+  SELECTING_DEVICE,
+  STOPPED,
+  RECORDING,
+  RECORDED,
+  PLAYBACK,
+  ERROR
+};
+
+void audioRecordingCallback(void* userData, uint8_t* stream, int len);
+void audioPlaybackCallback(void* userData, uint8_t* stream, int len);
+
+LTexture gDeviceTextures[MAX_RECORDING_DEVICES];
+
+int gRecordingDeviceCount = 0;
+
+SDL_AudioSpec gReceivedRecordingSpec;
+SDL_AudioSpec gReceivedPlaybackSpec;
+
+uint8_t* gRecordingBuffer = nullptr;
+
+uint32_t gBufferByteSize = 0;
+
+uint32_t gBufferBytePosition = 0;
+
+uint32_t gBufferByteMaxPosition = 0;
+
 int main(int argc, char* args[])
 {
   if (!initApp()) {
@@ -431,57 +463,163 @@ int main(int argc, char* args[])
     } else {
       bool shouldAppQuit = false;
       SDL_Event event;
-      
-      SDL_Color textColour {0, 0, 0, 0xFF};
-      SDL_Color highlightColour {0xFF, 0, 0, 0xFF};
 
-      int currentData = 0;
+      RecordingState currentState = SELECTING_DEVICE;
 
-      std::string inputText = "Some Text";
-      gInputTextTexture.loadFromRenderedText(inputText, textColour);
-
-      gPromptTextTexture.loadFromRenderedText("Enter Text:", textColour);
+      SDL_AudioDeviceID recordingDeviceID = 0;
+      SDL_AudioDeviceID playbackDeviceID = 0;
 
       while (!shouldAppQuit) {
         while (SDL_PollEvent(&event) != 0) {
           if (event.type == SDL_QUIT) {
             shouldAppQuit = true;
-          } else if (event.type == SDL_KEYDOWN) {
-            switch (event.key.keysym.sym) {
-              case SDLK_w:
-                gDataTextures[currentData].loadFromRenderedText(
-                  std::to_string(gData[currentData]), textColour);
-                currentData--;
-                if (currentData < 0) {
-                  currentData = TOTAL_DATA - 1;
-                }
-
-                gDataTextures[currentData].loadFromRenderedText(
-                  std::to_string(gData[currentData]), highlightColour);
-                break;
-              case SDLK_s:
-                gDataTextures[currentData].loadFromRenderedText(
-                  std::to_string(gData[currentData]), textColour);
-                currentData++;
-                if (currentData == TOTAL_DATA) {
-                  currentData = 0;
-                }
-
-                gDataTextures[currentData].loadFromRenderedText(
-                  std::to_string(gData[currentData]), highlightColour);
-                break;
-              case SDLK_a:
-                gData[currentData]--;
-                gDataTextures[currentData].loadFromRenderedText(
-                  std::to_string(gData[currentData]), highlightColour);
-                break;
-              case SDLK_d:
-                gData[currentData]++;
-                gDataTextures[currentData].loadFromRenderedText(
-                  std::to_string(gData[currentData]), highlightColour);
-                break;
-            }
           }
+
+          switch (currentState) {
+            case SELECTING_DEVICE:
+              if (event.type == SDL_KEYDOWN) {
+                if (event.key.keysym.sym >= SDLK_0
+                    && event.key.keysym.sym <= SDLK_9) {
+                  int index = event.key.keysym.sym - SDLK_0;
+
+                  if (index < gRecordingDeviceCount) {
+                    SDL_AudioSpec desiredRecordingSpec;
+                    SDL_zero(desiredRecordingSpec);
+
+                    desiredRecordingSpec.freq = 44100;
+                    desiredRecordingSpec.format = AUDIO_F32;
+                    desiredRecordingSpec.channels = 2;
+                    desiredRecordingSpec.samples = 4096;
+                    desiredRecordingSpec.callback = audioRecordingCallback;
+
+                    recordingDeviceID = SDL_OpenAudioDevice(
+                      SDL_GetAudioDeviceName(index, SDL_TRUE),
+                      SDL_TRUE,
+                      &desiredRecordingSpec,
+                      &gReceivedRecordingSpec,
+                      SDL_AUDIO_ALLOW_FORMAT_CHANGE);
+
+                    if (recordingDeviceID == 0) {
+                      std::cout << "Failed to open recording device. "
+                                << "SDL Error: " << SDL_GetError()
+                                << std::endl;
+                      gPromptTextTexture.loadFromRenderedText(
+                        "Failed to open recording dvice.", {0, 0, 0, 0xFF});
+                      currentState = ERROR;
+                    } else {
+                      SDL_AudioSpec desiredPlaybackSpec;
+                      SDL_zero(desiredPlaybackSpec);
+
+                      desiredPlaybackSpec.freq = 44100;
+                      desiredPlaybackSpec.format = AUDIO_F32;
+                      desiredPlaybackSpec.channels = 2;
+                      desiredPlaybackSpec.samples = 4096;
+                      desiredPlaybackSpec.callback = audioPlaybackCallback;
+
+                      playbackDeviceID = SDL_OpenAudioDevice(
+                        NULL,
+                        SDL_FALSE,
+                        &desiredPlaybackSpec,
+                        &gReceivedPlaybackSpec,
+                        SDL_AUDIO_ALLOW_FORMAT_CHANGE);
+
+                      if (playbackDeviceID == 0) {
+                        std::cout << "Failed to open playback device. "
+                                  << "SDL Error: " << SDL_GetError()
+                                  << std::endl;
+                        gPromptTextTexture.loadFromRenderedText(
+                          "Failed to open playback device.", {0, 0, 0, 0xFF});
+                        currentState = ERROR;
+                      } else {
+                        int bytesPerSample =
+                          gReceivedRecordingSpec.channels
+                          * (SDL_AUDIO_BITSIZE(gReceivedRecordingSpec.format)
+                            / 8);
+                        int bytesPerSecond =
+                          gReceivedRecordingSpec.freq * bytesPerSample;
+                        gBufferByteSize =
+                          RECORDING_BUFFER_SECONDS * bytesPerSecond;
+                        gBufferByteMaxPosition =
+                          MAX_RECORDING_SECONDS * bytesPerSecond;
+
+                        gRecordingBuffer = new uint8_t[gBufferByteSize];
+                        memset(gRecordingBuffer, 0, gBufferByteSize);
+
+                        gPromptTextTexture.loadFromRenderedText(
+                          "Press 1 to record for 5 seconds.", {0, 0, 0, 0xFF});
+                        currentState = STOPPED;
+                      }
+                    }
+                  }
+                }
+              }
+
+              break;
+            case STOPPED:
+              if (event.type == SDL_KEYDOWN) {
+                if (event.key.keysym.sym == SDLK_1) {
+                  gBufferBytePosition = 0;
+                  SDL_PauseAudioDevice(recordingDeviceID, SDL_FALSE);
+                  gPromptTextTexture.loadFromRenderedText(
+                    "Recording...", {0, 0, 0, 0xFF});
+                  currentState = RECORDING;
+                }
+              }
+
+              break;
+            case RECORDED:
+              if (event.type == SDL_KEYDOWN) {
+                if (event.key.keysym.sym == SDLK_1) {
+                  gBufferBytePosition = 0;
+                  SDL_PauseAudioDevice(playbackDeviceID, SDL_FALSE);
+
+                  gPromptTextTexture.loadFromRenderedText("Playing...",
+                                                          {0, 0, 0, 0xFF});
+                  currentState = PLAYBACK;
+                }
+
+                if (event.key.keysym.sym == SDLK_2) {
+                  gBufferBytePosition = 0;
+                  memset(gRecordingBuffer, 0, gBufferByteSize);
+
+                  SDL_PauseAudioDevice(recordingDeviceID, SDL_FALSE);
+
+                  gPromptTextTexture.loadFromRenderedText("Recording...",
+                                                          {0, 0, 0, 0xFF});
+                  currentState = RECORDING;
+                }
+              }
+
+              break;
+          }
+        }
+
+        if (currentState == RECORDING) {
+          SDL_LockAudioDevice(recordingDeviceID);
+
+          if (gBufferBytePosition > gBufferByteMaxPosition) {
+            SDL_PauseAudioDevice(recordingDeviceID, SDL_TRUE);
+
+            gPromptTextTexture.loadFromRenderedText(
+              "Press 1 to play back. Press 2 to record again.",
+              {0, 0, 0, 0xFF});
+            currentState = RECORDED;
+          }
+
+          SDL_UnlockAudioDevice(recordingDeviceID);
+        } else if (currentState == PLAYBACK) {
+          SDL_LockAudioDevice(playbackDeviceID);
+
+          if (gBufferBytePosition > gBufferByteMaxPosition) {
+            SDL_PauseAudioDevice(playbackDeviceID, SDL_TRUE);
+
+            gPromptTextTexture.loadFromRenderedText("Press 1 to play back. "
+                                                    "Press 2 to record again.",
+                                                    {0, 0, 0, 0xFF});
+            currentState = RECORDED;
+          }
+
+          SDL_UnlockAudioDevice(playbackDeviceID);
         }
 
         SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
@@ -489,10 +627,11 @@ int main(int argc, char* args[])
 
         gPromptTextTexture.render(
           (SCREEN_WIDTH - gPromptTextTexture.getWidth()) / 2, 0);
-        for (int i = 0; i < TOTAL_DATA; i++) {
-          gDataTextures[i].render(
-            (SCREEN_WIDTH - gDataTextures[i].getWidth()) / 2,
-            gPromptTextTexture.getHeight() + gDataTextures[i].getHeight() * i);
+        for (int i = 0; i < MAX_RECORDING_DEVICES; i++) {
+          gDeviceTextures[i].render(
+            (SCREEN_WIDTH - gDeviceTextures[i].getWidth()) / 2,
+            gPromptTextTexture.getHeight()
+            + gDeviceTextures[i].getHeight() * i);
         }
 
         SDL_RenderPresent(gRenderer);
@@ -503,6 +642,19 @@ int main(int argc, char* args[])
   closeApp();
 
   return 0;
+}
+
+void audioRecordingCallback(void* userData, uint8_t* stream, int len)
+{
+  memcpy(&gRecordingBuffer[gBufferBytePosition], stream, len);
+
+  gBufferBytePosition += len;
+}
+
+void audioPlaybackCallback(void* userData, uint8_t* stream, int len)
+{
+  memcpy(stream, &gRecordingBuffer[gBufferBytePosition], len);
+  gBufferBytePosition += len;
 }
 
 bool initApp()
@@ -567,6 +719,29 @@ bool loadMedia()
     std::cout << "Failed to load font: Raleway-Light.ttf. SDL_ttf Error: "
               << TTF_GetError() << std::endl;
     loadingSuccessState = false;
+  } else {
+    gPromptTextTexture.loadFromRenderedText("Select your recording device:",
+                                            {0, 0, 0, 0xFF});
+    gRecordingDeviceCount = SDL_GetNumAudioDevices(SDL_TRUE);
+
+    if (gRecordingDeviceCount < 1) {
+      std::cout << "Unable to get audio captrue device. SDL Error: "
+                << SDL_GetError() << std::endl;
+      loadingSuccessState = false;
+    } else {
+      if (gRecordingDeviceCount > MAX_RECORDING_DEVICES) {
+        gRecordingDeviceCount = MAX_RECORDING_DEVICES;
+      }
+
+      std::stringstream promptText;
+      for (int i = 0; i < gRecordingDeviceCount; i++) {
+        promptText.str("");
+        promptText << i << ": " << SDL_GetAudioDeviceName(i, SDL_TRUE);
+
+        gDeviceTextures[i].loadFromRenderedText(promptText.str(),
+                                                {0, 0, 0, 0xFF});
+      }
+    }
   }
 
   const std::string gDotTexturePath = "data/textures/dot.bmp";
@@ -583,35 +758,6 @@ bool loadMedia()
     loadingSuccessState = false;
   }
 
-  SDL_RWops* file = SDL_RWFromFile("data/files/nums.bin", "r+b");
-  if (file == nullptr) {
-    std::cout << "Warning: Unable to open file. SDL_Error: " << SDL_GetError()
-              << std::endl;
-
-    file = SDL_RWFromFile("data/files/nums.bin", "w+b");
-    if (file != nullptr) {
-      std::cout << "New file created." << std::endl;
-
-      for (int i = 0; i < TOTAL_DATA; i++) {
-        gData[i] = 0;
-        SDL_RWwrite(file, &gData[i], sizeof(int32_t), 1);
-      }
-
-      SDL_RWclose(file);
-    } else {
-      std::cout << "Error! Unable to create file. SDL Error: " << SDL_GetError()
-                << std::endl;
-      loadingSuccessState = false;
-    }
-  } else {
-    std::cout << "Reading file..." << std::endl;
-    for (int i = 0; i < TOTAL_DATA; i++) {
-      SDL_RWread(file, &gData[i], sizeof(int32_t), 1);
-    }
-
-    SDL_RWclose(file);
-  }
-
   SDL_Color highlightColour {0xFF, 0, 0, 0xFF};
   SDL_Color textColour {0, 0, 0, 0xFF};
   gDataTextures[0].loadFromRenderedText(std::to_string(gData[0]),
@@ -625,16 +771,8 @@ bool loadMedia()
 
 void closeApp()
 {
-  SDL_RWops* file = SDL_RWFromFile("data/files/nums.bin", "w+b");
-  if (file != nullptr) {
-    for (int i = 0; i < TOTAL_DATA; i++) {
-      SDL_RWwrite(file, &gData[i], sizeof(int32_t), 1);
-    }
-
-    SDL_RWclose(file);
-  } else {
-    std::cout << "Error: Unable to save file. SDL Error: " << SDL_GetError()
-              << std::endl;
+  for (int i = 0; i < MAX_RECORDING_DEVICES; i++) {
+    gDeviceTextures[i].free();
   }
 
   gDotTexture.free();
@@ -650,6 +788,11 @@ void closeApp()
   SDL_DestroyWindow(gWindow);
   gWindow = nullptr;
   gRenderer = nullptr;
+
+  if (gRecordingBuffer != nullptr) {
+    delete[] gRecordingBuffer;
+    gRecordingBuffer = nullptr;
+  }
 
   Mix_Quit();
   TTF_Quit();
