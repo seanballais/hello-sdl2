@@ -171,6 +171,8 @@ SDL_Rect gSpriteClips[BUTTON_SPRITE_TOTAL];
 LTexture gButtonSpriteSheetTexture;
 
 LTexture gBGTexture;
+LTexture gInputTextTexture;
+LTexture gPromptTextTexture;
 
 struct Circle
 {
@@ -425,35 +427,67 @@ int main(int argc, char* args[])
     } else {
       bool shouldAppQuit = false;
       SDL_Event event;
-      Dot dot {Dot::DOT_WIDTH / 2, Dot::DOT_HEIGHT / 2};
-      int scrollingOffset = 0;
+      
+      SDL_Color textColour {0, 0, 0, 0xFF};
+
+      std::string inputText = "Some Text";
+      gInputTextTexture.loadFromRenderedText(inputText, textColour);
+
+      gPromptTextTexture.loadFromRenderedText("Enter Text:", textColour);
+
+      SDL_StartTextInput();
 
       while (!shouldAppQuit) {
+        bool renderText = false;
         while (SDL_PollEvent(&event) != 0) {
           if (event.type == SDL_QUIT) {
             shouldAppQuit = true;
+          } else if (event.type == SDL_KEYDOWN) {
+            if (event.key.keysym.sym == SDLK_BACKSPACE
+                && (inputText.length() > 0)) {
+              inputText.pop_back();
+              renderText = true;
+            } else if (event.key.keysym.sym == SDLK_c
+                       && SDL_GetModState() & KMOD_CTRL) {
+              SDL_SetClipboardText(inputText.c_str());
+            } else if (event.key.keysym.sym == SDLK_v
+                       && SDL_GetModState() & KMOD_CTRL) {
+              inputText = SDL_GetClipboardText();
+              renderText = true;
+            }
+          } else if (event.type == SDL_TEXTINPUT) {
+            if (!(SDL_GetModState() & KMOD_CTRL
+                  && (event.text.text[0] == 'c' || event.text.text[0] == 'C'
+                      || event.text.text[0] == 'v' || event.text.text[0] == 'V')
+               )) {
+              inputText += event.text.text;
+              renderText = true;
+            }
           }
-
-          dot.handleEvent(&event);
         }
 
-        dot.move();
-
-        scrollingOffset--;
-        if (scrollingOffset < -gBGTexture.getWidth()) {
-          scrollingOffset = 0;
+        if (renderText) {
+          if (inputText != "") {
+            gInputTextTexture.loadFromRenderedText(inputText, textColour);
+          } else {
+            gInputTextTexture.loadFromRenderedText(" ", textColour);
+          }
         }
 
         SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
         SDL_RenderClear(gRenderer);
 
-        gBGTexture.render(scrollingOffset, 0);
-        gBGTexture.render(scrollingOffset + gBGTexture.getWidth(), 0);
+        gPromptTextTexture.render(
+          (SCREEN_WIDTH - gPromptTextTexture.getWidth()) / 2, 0);
 
-        dot.render();
+        gInputTextTexture.render(
+          (SCREEN_WIDTH - gInputTextTexture.getWidth()) / 2,
+          gPromptTextTexture.getHeight());
 
         SDL_RenderPresent(gRenderer);
       }
+
+      SDL_StopTextInput();
     }
   }
 
@@ -484,7 +518,7 @@ bool initApp()
 
   gRenderer = SDL_CreateRenderer(gWindow, -1,
                                  SDL_RENDERER_ACCELERATED
-                                 /*| SDL_RENDERER_PRESENTVSYNC*/);
+                                 | SDL_RENDERER_PRESENTVSYNC);
   if (gRenderer == nullptr) {
     std::cout << "Renderer could not be created. SDL Error: " << SDL_GetError()
               << std::endl;
@@ -519,6 +553,13 @@ bool loadMedia()
 {
   bool loadingSuccessState = true;
 
+  gFont = TTF_OpenFont("data/fonts/Raleway-Light.ttf", 28);
+  if (gFont == nullptr) {
+    std::cout << "Failed to load font: Raleway-Light.ttf. SDL_ttf Error: "
+              << TTF_GetError() << std::endl;
+    loadingSuccessState = false;
+  }
+
   const std::string gDotTexturePath = "data/textures/dot.bmp";
   if (!gDotTexture.loadFromFile(gDotTexturePath)) {
     std::cout << "Failed to load dot texture. SDL_image Error: "
@@ -540,6 +581,9 @@ void closeApp()
 {
   gDotTexture.free();
   gBGTexture.free();
+
+  gPromptTextTexture.free();
+  gInputTextTexture.free();
 
   TTF_CloseFont(gFont);
   gFont = nullptr;
