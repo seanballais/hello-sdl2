@@ -406,6 +406,8 @@ private:
   Circle collider;
 };
 
+const int TOTAL_WINDOWS = 3;
+
 class LWindow
 {
 public:
@@ -431,32 +433,51 @@ public:
       this->isKeyboardFocused = true;
       this->width = SCREEN_WIDTH;
       this->height = SCREEN_HEIGHT;
+
+      this->renderer = SDL_CreateRenderer(this->window,
+                                          -1,
+                                          SDL_RENDERER_ACCELERATED
+                                          | SDL_RENDERER_PRESENTVSYNC);
+      if (this->renderer == nullptr) {
+        std::cout << "Renderer could not be created. SDL Error: "
+                  << SDL_GetError() << std::endl;
+        SDL_DestroyWindow(this->window);
+        this->window = nullptr;
+      } else {
+        SDL_SetRenderDrawColor(this->renderer, 0xFF, 0xFF, 0xFF, 0xFF);
+
+        this->windowID = SDL_GetWindowID(this->window);
+
+        this->isShown_ = true;
+      }
+    } else {
+      std::cout << "Window could not be created. SDL Error: "
+                << SDL_GetError() << std::endl;
     }
 
-    return this->window != nullptr;
-  }
-
-  SDL_Renderer* createRenderer()
-  {
-    return SDL_CreateRenderer(this->window,
-                              -1,
-                              SDL_RENDERER_ACCELERATED
-                              | SDL_RENDERER_PRESENTVSYNC);
+    return this->window != nullptr && this->renderer != nullptr;
   }
 
   void handleEvent(SDL_Event& event)
   {
-    if (event.type == SDL_WINDOWEVENT) {
+    if (event.type == SDL_WINDOWEVENT
+        && event.window.windowID == this->windowID) {
       bool updateCaption = false;
 
       switch (event.window.event) {
+        case SDL_WINDOWEVENT_SHOWN:
+          this->isShown_ = true;
+          break;
+        case SDL_WINDOWEVENT_HIDDEN:
+          this->isShown_ = false;
+          break;
         case SDL_WINDOWEVENT_SIZE_CHANGED:
           this->width = event.window.data1;
           this->height = event.window.data2;
-          SDL_RenderPresent(gRenderer);
+          SDL_RenderPresent(this->renderer);
           break;
         case SDL_WINDOWEVENT_EXPOSED:
-          SDL_RenderPresent(gRenderer);
+          SDL_RenderPresent(this->renderer);
           break;
         case SDL_WINDOWEVENT_ENTER:
           this->isMouseFocused = true;
@@ -483,6 +504,9 @@ public:
         case SDL_WINDOWEVENT_RESTORED:
           this->isMinimized_ = false;
           break;
+        case SDL_WINDOWEVENT_CLOSE:
+          SDL_HideWindow(this->window);
+          break;
       }
 
       if (updateCaption) {
@@ -505,10 +529,31 @@ public:
       }
     }
   }
+
+  void focus()
+  {
+    if (!this->isShown_) {
+      SDL_ShowWindow(this->window);
+    }
+
+    SDL_RaiseWindow(this->window);
+  }
+
+  void render()
+  {
+    if (!this->isMinimized_) {
+      SDL_SetRenderDrawColor(this->renderer, 0xFF, 0xFF, 0xFF, 0xFF);
+      SDL_RenderClear(this->renderer);
+      SDL_RenderPresent(this->renderer);
+    }
+  }
   
   void free()
   {
+    SDL_DestroyRenderer(gRenderer);
     SDL_DestroyWindow(this->window);
+
+    this->renderer = nullptr;
     this->window = nullptr;
   }
 
@@ -537,8 +582,15 @@ public:
     return this->isMinimized_;
   }
 
+  bool isShown()
+  {
+    return this->isShown_;
+  }
+
 private:
   SDL_Window* window;
+  SDL_Renderer* renderer;
+  uint32_t windowID;
 
   int width;
   int height;
@@ -547,9 +599,10 @@ private:
   bool isKeyboardFocused;
   bool isFullscreen;
   bool isMinimized_;
+  bool isShown_;
 };
 
-LWindow gWindow;
+LWindow gWindows[TOTAL_WINDOWS];
 LTexture gSceneTexture;
 
 LButton gButtons[TOTAL_BUTTONS];
@@ -577,24 +630,49 @@ int main(int argc, char* args[])
       bool shouldAppQuit = false;
       SDL_Event event;
 
+      for (int i = 1; i < TOTAL_WINDOWS; i++) {
+        gWindows[i].init();
+      }
+
       while (!shouldAppQuit) {
         while (SDL_PollEvent(&event) != 0) {
           if (event.type == SDL_QUIT) {
             shouldAppQuit = true;
           }
 
-          gWindow.handleEvent(event);
+          for (int i = 0; i < TOTAL_WINDOWS; i++) {
+            gWindows[i].handleEvent(event);
+          }
+
+          if (event.type == SDL_KEYDOWN) {
+            switch (event.key.keysym.sym) {
+              case SDLK_1:
+                gWindows[0].focus();
+                break;
+              case SDLK_2:
+                gWindows[1].focus();
+                break;
+              case SDLK_3:
+                gWindows[2].focus();
+                break;
+            }
+          }
         }
 
-        if (!gWindow.isMinimized()) {
-          SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
-          SDL_RenderClear(gRenderer);
-        
-          gSceneTexture.render(
-            (gWindow.getWidth() - gSceneTexture.getWidth()) / 2,
-            (gWindow.getHeight() - gSceneTexture.getHeight()) / 2);
-        
-          SDL_RenderPresent(gRenderer);
+        for (int i = 0; i < TOTAL_WINDOWS; i++) {
+          gWindows[i].render();
+        }
+
+        bool allWindowsClosed = true;
+        for (int i = 0; i < TOTAL_WINDOWS; i++) {
+          if (gWindows[i].isShown()) {
+            allWindowsClosed = false;
+            break;
+          }
+        }
+
+        if (allWindowsClosed) {
+          shouldAppQuit = true;
         }
       }
     }
@@ -607,22 +685,18 @@ int main(int argc, char* args[])
 
 bool initApp()
 {
-  if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0) {
+  if (SDL_Init(SDL_INIT_VIDEO) < 0) {
     std::cout << "SDL could not be initialized. SDL Error: " << SDL_GetError()
               << std::endl;
     return false;
   }
 
-  if (!gWindow.init()) {
-    std::cout << "Window could not be created. SDL Error: " << SDL_GetError()
-              << std::endl;
-    return false;
+  if (!SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1")) {
+    std::cout << "Warning: Linear texture filtering not enabled." << std::endl;
   }
 
-  gRenderer = gWindow.createRenderer();
-  if (gRenderer == nullptr) {
-    std::cout << "Renderer could not be created. SDL Error: " << SDL_GetError()
-              << std::endl;
+  if (!gWindows[0].init()) {
+    std::cout << "Window 0 could not be created." << std::endl;
     return false;
   }
 
@@ -653,46 +727,6 @@ bool initApp()
 bool loadMedia()
 {
   bool loadingSuccessState = true;
-
-  gFont = TTF_OpenFont("data/fonts/Raleway-Light.ttf", 28);
-  if (gFont == nullptr) {
-    std::cout << "Failed to load font: Raleway-Light.ttf. SDL_ttf Error: "
-              << TTF_GetError() << std::endl;
-    loadingSuccessState = false;
-  } else {
-    gPromptTextTexture.loadFromRenderedText("Select your recording device:",
-                                            {0, 0, 0, 0xFF});
-  }
-
-  const std::string gDotTexturePath = "data/textures/dot.bmp";
-  if (!gDotTexture.loadFromFile(gDotTexturePath)) {
-    std::cout << "Failed to load dot texture. SDL_image Error: "
-              << IMG_GetError() << std::endl;
-    loadingSuccessState = false;
-  }
-
-  const std::string gBGTexturePath = "data/textures/scrolling-bg.png";
-  if (!gBGTexture.loadFromFile(gBGTexturePath)) {
-    std::cout << "Failed to load background texture. SDL_image Error: "
-              << IMG_GetError() << std::endl;
-    loadingSuccessState = false;
-  }
-
-  const std::string gSceneTexturePath = "data/textures/window.png";
-  if (!gSceneTexture.loadFromFile(gSceneTexturePath)) {
-    std::cout << "Failed to load scene texture. SDL_image Error: "
-              << IMG_GetError() << std::endl;
-    loadingSuccessState = false;
-  }
-
-  SDL_Color highlightColour {0xFF, 0, 0, 0xFF};
-  SDL_Color textColour {0, 0, 0, 0xFF};
-  gDataTextures[0].loadFromRenderedText(std::to_string(gData[0]),
-                                        highlightColour);
-  for (int i = 1; i < TOTAL_DATA; i++) {
-    gDataTextures[i].loadFromRenderedText(std::to_string(gData[i]), textColour);
-  }
-
   return loadingSuccessState;
 }
 
@@ -702,15 +736,15 @@ void closeApp()
   gDotTexture.free();
   gBGTexture.free();
 
+  for (int i = 0; i < TOTAL_WINDOWS; i++) {
+    gWindows[i].free();
+  }
+
   gPromptTextTexture.free();
   gInputTextTexture.free();
 
   TTF_CloseFont(gFont);
   gFont = nullptr;
-
-  SDL_DestroyRenderer(gRenderer);
-  gWindow.free();
-  gRenderer = nullptr;
 
   Mix_Quit();
   TTF_Quit();
