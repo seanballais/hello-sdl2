@@ -2,44 +2,40 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <fstream>
 #include <iostream>
 #include <sstream>
 #include <string>
-#include <vector>
 
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
-#include <SDL2/SDL_mixer.h>
-#include <SDL2/SDL_ttf.h>
 
 const int SCREEN_WIDTH = 640;
 const int SCREEN_HEIGHT = 480;
+
 const int LEVEL_WIDTH = 1280;
 const int LEVEL_HEIGHT = 960;
-const int BUTTON_WIDTH = 300;
-const int BUTTON_HEIGHT = 200;
-const int TOTAL_BUTTONS = 4;
-const int SCREEN_FPS = 60;
-const int SCREEN_TICKS_PER_FRAME = 1000 / SCREEN_FPS;
+
+const int TILE_WIDTH = 80;
+const int TILE_HEIGHT = 80;
+const int TOTAL_TILES = 192;
+const int TOTAL_TILE_SPRITES = 12;
+
+const int TILE_RED = 0;
+const int TILE_GREEN = 1;
+const int TILE_BLUE = 2;
+const int TILE_CENTER = 3;
+const int TILE_TOP = 4;
+const int TILE_TOPRIGHT = 5;
+const int TILE_RIGHT = 6;
+const int TILE_BOTTOMRIGHT = 7;
+const int TILE_BOTTOM = 8;
+const int TILE_BOTTOMLEFT = 9;
+const int TILE_LEFT = 10;
+const int TILE_TOPLEFT = 11;
 
 SDL_Window* gWindow = nullptr;
 SDL_Renderer* gRenderer = nullptr;
-TTF_Font* gFont = nullptr;
-Mix_Music* gMusic = nullptr;
-
-Mix_Chunk* gScratch = nullptr;
-Mix_Chunk* gHigh = nullptr;
-Mix_Chunk* gMedium = nullptr;
-Mix_Chunk* gLow = nullptr;
-
-enum LButtonSprite
-{
-  BUTTON_SPRITE_MOUSE_OUT = 0,
-  BUTTON_SPRITE_MOUSE_OVER_MOTION = 1,
-  BUTTON_SPRITE_MOUSE_DOWN = 2,
-  BUTTON_SPRITE_MOUSE_UP = 3,
-  BUTTON_SPRITE_TOTAL = 4
-};
 
 class LTexture
 {
@@ -83,31 +79,6 @@ public:
     this->texture = texture;
 
     return texture != nullptr;
-  }
-
-  bool loadFromRenderedText(std::string textureText, SDL_Color textColor)
-  {
-    free();
-
-    SDL_Surface* textSurface = TTF_RenderText_Solid(gFont, textureText.c_str(),
-                                                    textColor);
-    if (textSurface == nullptr) {
-      std::cout << "Unable to render text surface. SDL_ttf Error: "
-                << TTF_GetError() << std::endl;
-    } else {
-      this->texture = SDL_CreateTextureFromSurface(gRenderer, textSurface);
-      if (this->texture == nullptr) {
-        std::cout << "Unable to create texture from rendered text. SDL Error: "
-                  << SDL_GetError() << std::endl;
-      } else {
-        this->width = textSurface->w;
-        this->height = textSurface->h;
-      }
-
-      SDL_FreeSurface(textSurface);
-    }
-
-    return this->texture != nullptr;
   }
 
   void free()
@@ -168,220 +139,46 @@ private:
   int height;
 };
 
-SDL_Rect gSpriteClips[BUTTON_SPRITE_TOTAL];
-LTexture gButtonSpriteSheetTexture;
+LTexture gTileTexture;
+SDL_Rect gTileClips[12];
 
-LTexture gBGTexture;
-LTexture gInputTextTexture;
-LTexture gPromptTextTexture;
+bool checkCollision(SDL_Rect a, SDL_Rect b);
 
-struct Circle
-{
-  int x;
-  int y;
-  int r;
-};
-
-class LButton
+class Tile
 {
 public:
-  LButton()
-    : position({0, 0})
-    , currentSprite(BUTTON_SPRITE_MOUSE_OUT) {}
+  Tile(int x, int y, int tileType)
+    : box({x, y, TILE_WIDTH, TILE_HEIGHT})
+    , type(tileType) {}
 
-  void setPosition(int x, int y)
+  void render(SDL_Rect& camera)
   {
-    this->position.x = x;
-    this->position.y = y;
-  }
-
-  void handleEvent(SDL_Event* event)
-  {
-    if (event->type == SDL_MOUSEMOTION
-        || event->type == SDL_MOUSEBUTTONDOWN
-        || event->type == SDL_MOUSEBUTTONUP) {
-      int x;
-      int y;
-      SDL_GetMouseState(&x, &y);
-
-      bool isMouseInsideButton = true;
-
-      if (x < this->position.x) {
-        isMouseInsideButton = false;
-      } else if (x > (this->position.x + BUTTON_WIDTH)) {
-        isMouseInsideButton = false;
-      } else if (y < this->position.y) {
-        isMouseInsideButton = false;
-      } else if (y > (this->position.y + BUTTON_HEIGHT)) {
-        isMouseInsideButton = false;
-      }
-
-      if (!isMouseInsideButton) {
-        this->currentSprite = BUTTON_SPRITE_MOUSE_OUT;
-      } else {
-        switch (event->type) {
-          case SDL_MOUSEMOTION:
-            this->currentSprite = BUTTON_SPRITE_MOUSE_OVER_MOTION;
-            break;
-          case SDL_MOUSEBUTTONDOWN:
-            this->currentSprite = BUTTON_SPRITE_MOUSE_DOWN;
-            break;
-          case SDL_MOUSEBUTTONUP:
-            this->currentSprite = BUTTON_SPRITE_MOUSE_UP;
-            break;
-        }
-      }
+    if (checkCollision(camera, this->box)) {
+      gTileTexture.render(this->box.x - camera.x,
+                          this->box.y - camera.y,
+                          &gTileClips[this->type]);
     }
   }
 
-  void render()
+  int getType()
   {
-    gButtonSpriteSheetTexture.render(this->position.x, this->position.y,
-                                     &gSpriteClips[this->currentSprite]);
+    return this->type;
+  }
+
+  SDL_Rect getBox()
+  {
+    return this->box;
   }
 
 private:
-  SDL_Point position;
-
-  LButtonSprite currentSprite;
+  SDL_Rect box;
+  int type;
 };
 
-class LTimer
-{
-public:
-  LTimer()
-    : startTicks(0)
-    , pausedTicks(0)
-    , isPausedState(false)
-    , isStartedState(false) {}
-
-  bool isStarted()
-  {
-    return this->isStartedState;
-  }
-
-  bool isPaused()
-  {
-    return this->isPausedState && this->isStartedState;
-  }
-
-  void start()
-  {
-    this->isStartedState = true;
-    this->isPausedState = false;
-
-    this->startTicks = SDL_GetTicks();
-    this->pausedTicks = 0;
-  }
-
-  void stop()
-  {
-    this->isStartedState = false;
-    this->isPausedState = false;
-
-    this->startTicks = 0;
-    this->pausedTicks = 0;
-  }
-
-  void pause()
-  {
-    if (this->isStarted() && !this->isPaused()) {
-      this->isPausedState = true;
-
-      this->pausedTicks = SDL_GetTicks() - this->startTicks;
-      this->startTicks = 0;
-    }
-  }
-
-  void resume()
-  {
-    if (this->isStarted() && this->isPaused()) {
-      this->isPausedState = false;
-
-      this->startTicks = SDL_GetTicks() - this->pausedTicks;
-
-      this->pausedTicks = 0;
-    }
-  }
-
-  uint32_t getTicks()
-  {
-    uint32_t time = 0;
-    if (this->isStarted()) {
-      if (this->isPaused()) {
-        time = this->pausedTicks;
-      } else {
-        time = SDL_GetTicks() - this->startTicks;
-      }
-    }
-
-    return time;
-  }
-
-private:
-  uint32_t startTicks;
-  uint32_t pausedTicks;
-
-  bool isPausedState;
-  bool isStartedState;
-};
+bool touchesWall(SDL_Rect box, Tile* tiles[]);
+bool setTiles(Tile* tiles[]);
 
 LTexture gDotTexture;
-
-bool checkCollision(Circle& a, Circle& b);
-bool checkCollision(Circle& a, SDL_Rect& b);
-
-const int TOTAL_PARTICLES = 20;
-
-LTexture gRedTexture;
-LTexture gGreenTexture;
-LTexture gBlueTexture;
-LTexture gShimmerTexture;
-
-class Particle
-{
-public:
-  Particle(int x, int y)
-      : posX(x - 5 + (rand() % 25))
-      , posY(y - 5 + (rand() % 25))
-      , frame(rand() % 5)
-  {
-    switch (rand() % 3) {
-      case 0:
-        this->texture = &gRedTexture;
-        break;
-      case 1:
-        this->texture = &gGreenTexture;
-        break;
-      case 2:
-        this->texture = &gBlueTexture;
-        break;
-    }
-  }
-
-  void render()
-  {
-    this->texture->render(this->posX, this->posY);
-
-    if (this->frame % 2 == 0) {
-      gShimmerTexture.render(this->posX, this->posY);
-    }
-
-    this->frame++;
-  }
-
-  bool isDead()
-  {
-    return this->frame > 10;
-  }
-
-private:
-  int posX;
-  int posY;
-  int frame;
-
-  LTexture* texture;
-};
 
 class Dot
 {
@@ -392,22 +189,9 @@ public:
   static const int DOT_VEL = 10;
 
   Dot()
-      : posX(0)
-      , posY(0)
-      , velX(0)
-      , velY(0)
-  {
-    for (int i = 0; i < TOTAL_PARTICLES; i++) {
-      particles[i] = new Particle(this->posX, this->posY);
-    }
-  }
-
-  ~Dot()
-  {
-    for (int i = 0; i < TOTAL_PARTICLES; i++) {
-      delete particles[i];
-    }
-  }
+    : box({0, 0, DOT_WIDTH, DOT_HEIGHT})
+    , velX(0)
+    , velY(0) {}
 
   void handleEvent(SDL_Event* event)
   {
@@ -428,253 +212,61 @@ public:
     }
   }
 
-  void move()
+  void move(Tile* tiles[])
   {
-    this->posX += this->velX;
-    if ((this->posX < 0) || (this->posX + DOT_WIDTH > SCREEN_WIDTH)) {
-      this->posX -= this->velX;
+    this->box.x += this->velX;
+
+    if ((this->box.x < 0)
+        || (this->box.x + DOT_WIDTH > LEVEL_WIDTH)
+        || touchesWall(this->box, tiles)) {
+      this->box.x -= this->velX;
     }
 
-    this->posY += this->velY;
-    if ((this->posY < 0) || (this->posY + DOT_HEIGHT > SCREEN_HEIGHT)) {
-      this->posY -= this->velY;
+    this->box.y += this->velY;
+
+    if ((this->box.y < 0)
+        || (this->box.y + DOT_HEIGHT > LEVEL_HEIGHT)
+        || touchesWall(this->box, tiles)) {
+      this->box.y -= this->velY;
     }
   }
 
-  void render()
+  void setCamera(SDL_Rect& camera)
   {
-    gDotTexture.render(this->posX, this->posY);
-    this->renderParticles();
+    camera.x = (this->box.x + DOT_WIDTH / 2) - (SCREEN_WIDTH / 2);
+    camera.y = (this->box.y + DOT_HEIGHT / 2) - (SCREEN_HEIGHT / 2);
+
+    if (camera.x < 0) {
+      camera.x = 0;
+    }
+
+    if (camera.y < 0) {
+      camera.y = 0;
+    }
+
+    if (camera.x > LEVEL_WIDTH - camera.w) {
+      camera.x = LEVEL_WIDTH - camera.w;
+    }
+
+    if (camera.y > LEVEL_HEIGHT - camera.h) {
+      camera.y = LEVEL_HEIGHT - camera.h;
+    }
+  }
+
+  void render(SDL_Rect& camera)
+  {
+    gDotTexture.render(this->box.x - camera.x, this->box.y - camera.y);
   }
 
 private:
-  Particle* particles[TOTAL_PARTICLES];
-
-  int posX;
-  int posY;
+  SDL_Rect box;
 
   int velX;
   int velY;
-
-  void renderParticles()
-  {
-    for (int i = 0; i < TOTAL_PARTICLES; i++) {
-      if (this->particles[i]->isDead()) {
-        delete this->particles[i];
-        this->particles[i] = new Particle(this->posX, this->posY);
-      }
-    }
-
-    for (int i = 0; i < TOTAL_PARTICLES; i++) {
-      this->particles[i]->render();
-    }
-  }
 };
-
-const int TOTAL_WINDOWS = 3;
-
-class LWindow
-{
-public:
-  LWindow()
-    : window(nullptr)
-    , width(0)
-    , height(0)
-    , isMouseFocused(false)
-    , isKeyboardFocused(false)
-    , isFullscreen(false)
-    , isMinimized_(false) {}
-
-  bool init()
-  {
-    this->window = SDL_CreateWindow("SDL 2 Tutorial",
-                                    SDL_WINDOWPOS_UNDEFINED,
-                                    SDL_WINDOWPOS_UNDEFINED,
-                                    SCREEN_WIDTH,
-                                    SCREEN_HEIGHT,
-                                    SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
-    if (this->window != nullptr) {
-      this->isMouseFocused = true;
-      this->isKeyboardFocused = true;
-      this->width = SCREEN_WIDTH;
-      this->height = SCREEN_HEIGHT;
-
-      this->renderer = SDL_CreateRenderer(this->window,
-                                          -1,
-                                          SDL_RENDERER_ACCELERATED
-                                          | SDL_RENDERER_PRESENTVSYNC);
-      if (this->renderer == nullptr) {
-        std::cout << "Renderer could not be created. SDL Error: "
-                  << SDL_GetError() << std::endl;
-        SDL_DestroyWindow(this->window);
-        this->window = nullptr;
-      } else {
-        SDL_SetRenderDrawColor(this->renderer, 0xFF, 0xFF, 0xFF, 0xFF);
-
-        this->windowID = SDL_GetWindowID(this->window);
-
-        this->isShown_ = true;
-      }
-    } else {
-      std::cout << "Window could not be created. SDL Error: "
-                << SDL_GetError() << std::endl;
-    }
-
-    return this->window != nullptr && this->renderer != nullptr;
-  }
-
-  void handleEvent(SDL_Event& event)
-  {
-    if (event.type == SDL_WINDOWEVENT
-        && event.window.windowID == this->windowID) {
-      bool updateCaption = false;
-
-      switch (event.window.event) {
-        case SDL_WINDOWEVENT_SHOWN:
-          this->isShown_ = true;
-          break;
-        case SDL_WINDOWEVENT_HIDDEN:
-          this->isShown_ = false;
-          break;
-        case SDL_WINDOWEVENT_SIZE_CHANGED:
-          this->width = event.window.data1;
-          this->height = event.window.data2;
-          SDL_RenderPresent(this->renderer);
-          break;
-        case SDL_WINDOWEVENT_EXPOSED:
-          SDL_RenderPresent(this->renderer);
-          break;
-        case SDL_WINDOWEVENT_ENTER:
-          this->isMouseFocused = true;
-          updateCaption = true;
-          break;
-        case SDL_WINDOWEVENT_LEAVE:
-          this->isMouseFocused = false;
-          updateCaption = true;
-          break;
-        case SDL_WINDOWEVENT_FOCUS_GAINED:
-          this->isKeyboardFocused = true;
-          updateCaption = true;
-          break;
-        case SDL_WINDOWEVENT_FOCUS_LOST:
-          this->isKeyboardFocused = false;
-          updateCaption = true;
-          break;
-        case SDL_WINDOWEVENT_MINIMIZED:
-          this->isMinimized_ = true;
-          break;
-        case SDL_WINDOWEVENT_MAXIMIZED:
-          this->isMinimized_ = false;
-          break;
-        case SDL_WINDOWEVENT_RESTORED:
-          this->isMinimized_ = false;
-          break;
-        case SDL_WINDOWEVENT_CLOSE:
-          SDL_HideWindow(this->window);
-          break;
-      }
-
-      if (updateCaption) {
-        std::stringstream caption;
-        caption << "SDL 2 Tutoral -"
-                << " Mouse Focus: " << (this->isMouseFocused ? "On" : "Off")
-                << " Keyboard Focus: "
-                << ((this->isKeyboardFocused) ? "On" : "Off");
-        SDL_SetWindowTitle(this->window, caption.str().c_str());
-      }
-    } else if (event.type == SDL_KEYDOWN
-               && event.key.keysym.sym == SDLK_RETURN) {
-      if (this->isFullscreen) {
-        SDL_SetWindowFullscreen(this->window, SDL_FALSE);
-        this->isFullscreen = false;
-      } else {
-        SDL_SetWindowFullscreen(this->window, SDL_TRUE);
-        this->isFullscreen = true;
-        this->isMinimized_ = false;
-      }
-    }
-  }
-
-  void focus()
-  {
-    if (!this->isShown_) {
-      SDL_ShowWindow(this->window);
-    }
-
-    SDL_RaiseWindow(this->window);
-  }
-
-  void render()
-  {
-    if (!this->isMinimized_) {
-      SDL_SetRenderDrawColor(this->renderer, 0xFF, 0xFF, 0xFF, 0xFF);
-      SDL_RenderClear(this->renderer);
-      SDL_RenderPresent(this->renderer);
-    }
-  }
-  
-  void free()
-  {
-    SDL_DestroyRenderer(gRenderer);
-    SDL_DestroyWindow(this->window);
-
-    this->renderer = nullptr;
-    this->window = nullptr;
-  }
-
-  int getWidth()
-  {
-    return this->width;
-  }
-  
-  int getHeight()
-  {
-    return this->height;
-  }
-
-  bool hasMouseFocus()
-  {
-    return this->isMouseFocused;
-  }
-
-  bool hasKeyboardFocus()
-  {
-    return this->isKeyboardFocused;
-  }
-
-  bool isMinimized()
-  {
-    return this->isMinimized_;
-  }
-
-  bool isShown()
-  {
-    return this->isShown_;
-  }
-
-private:
-  SDL_Window* window;
-  SDL_Renderer* renderer;
-  uint32_t windowID;
-
-  int width;
-  int height;
-
-  bool isMouseFocused;
-  bool isKeyboardFocused;
-  bool isFullscreen;
-  bool isMinimized_;
-  bool isShown_;
-};
-
-LWindow gWindows[TOTAL_WINDOWS];
-LTexture gSceneTexture;
-
-LButton gButtons[TOTAL_BUTTONS];
-LTexture gTimeTextTexture;
 
 bool initApp();
-bool loadMedia();
+bool loadMedia(Tile* tiles[]);
 void closeApp();
 
 SDL_Surface* loadSurface(std::string path);
@@ -689,14 +281,16 @@ int main(int argc, char* args[])
   if (!initApp()) {
     std::cout << "Failed to initialize." << std::endl;
   } else {
-    if (!loadMedia()) {
+    Tile* tileSet[TOTAL_TILES];
+    if (!loadMedia(tileSet)) {
       std::cout << "Failed to load media." << std::endl;
     } else {
       bool shouldAppQuit = false;
       SDL_Event event;
 
-      Dot dot;
+      SDL_Rect camera {0, 0, SCREEN_WIDTH, SCREEN_HEIGHT};
 
+      Dot dot;
       while (!shouldAppQuit) {
         while (SDL_PollEvent(&event) != 0) {
           if (event.type == SDL_QUIT) {
@@ -706,14 +300,25 @@ int main(int argc, char* args[])
           dot.handleEvent(&event);
         }
 
-        dot.move();
+        dot.move(tileSet);
+        dot.setCamera(camera);
 
         SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
         SDL_RenderClear(gRenderer);
 
-        dot.render();
+        for (int i = 0; i < TOTAL_TILES; i++) {
+          tileSet[i]->render(camera);
+        }
+
+        dot.render(camera);
 
         SDL_RenderPresent(gRenderer);
+      }
+    }
+
+    for (int i = 0; i < TOTAL_TILES; i++) {
+      if (tileSet[i] != nullptr) {
+        delete tileSet[i];
       }
     }
   }
@@ -761,22 +366,10 @@ bool initApp()
     return false;
   }
 
-  if (TTF_Init() == -1) {
-    std::cout << "SDL_ttf could not initialize. SDL_ttf Error: "
-              << TTF_GetError() << std::endl;
-    return false;
-  }
-
-  if (Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, 2048) < 0) {
-    std::cout << "SDL_mixer could not initialize. SDL_mixer Error: "
-              << Mix_GetError() << std::endl;
-    return false;
-  }
-
   return true;
 }
 
-bool loadMedia()
+bool loadMedia(Tile* tiles[])
 {
   bool loadingSuccessState = true;
 
@@ -785,94 +378,135 @@ bool loadMedia()
     loadingSuccessState = false;
   }
 
-  if (!gRedTexture.loadFromFile("data/textures/red.bmp")) {
-    std::cout << "Failed to load red texture." << std::endl;
+  if (!gTileTexture.loadFromFile("data/textures/tiles.png")) {
+    std::cout << "Failed to load tile set texture." << std::endl;
     loadingSuccessState = false;
   }
 
-  if (!gGreenTexture.loadFromFile("data/textures/green.bmp")) {
-    std::cout << "Failed to load green texture." << std::endl;
+  if (!setTiles(tiles)) {
+    std::cout << "Failed to load tile set." << std::endl;
     loadingSuccessState = false;
   }
-
-  if (!gBlueTexture.loadFromFile("data/textures/blue.bmp")) {
-    std::cout << "Failed to load blue texture." << std::endl;
-    loadingSuccessState = false;
-  }
-
-  if (!gShimmerTexture.loadFromFile("data/textures/shimmer.bmp")) {
-    std::cout << "Failed to load shimmer texture." << std::endl;
-    loadingSuccessState = false;
-  }
-
-  gRedTexture.setAlpha(192);
-  gGreenTexture.setAlpha(192);
-  gBlueTexture.setAlpha(192);
-  gShimmerTexture.setAlpha(192);
 
   return loadingSuccessState;
 }
 
 void closeApp()
 {
-  gSceneTexture.free();
-  gDotTexture.free();
-  gBGTexture.free();
-  gRedTexture.free();
-  gGreenTexture.free();
-  gBlueTexture.free();
-  gShimmerTexture.free();
+  SDL_DestroyRenderer(gRenderer);
+  SDL_DestroyWindow(gWindow);
+  
+  gRenderer = nullptr;
+  gWindow = nullptr;
 
-  for (int i = 0; i < TOTAL_WINDOWS; i++) {
-    gWindows[i].free();
-  }
-
-  gPromptTextTexture.free();
-  gInputTextTexture.free();
-
-  TTF_CloseFont(gFont);
-  gFont = nullptr;
-
-  Mix_Quit();
-  TTF_Quit();
   IMG_Quit();
   SDL_Quit();
 }
 
-double distanceSquared(int x1, int y1, int x2, int y2)
+bool setTiles(Tile* tiles[])
 {
-  return ((x1 - x2) * (x1 - x2)) + ((y1 - y2) * (y1 - y2));
-}
+  bool tilesLoaded = true;
 
-bool checkCollision(Circle& a, Circle& b)
-{
-  int totalRadiusSquared = a.r + b.r;
-  totalRadiusSquared = totalRadiusSquared * totalRadiusSquared;
-  return (distanceSquared(a.x, a.y, b.x, b.y) < totalRadiusSquared);
-}
+  int x = 0;
+  int y = 0;
 
-bool checkCollision(Circle& a, SDL_Rect& b)
-{
-  int closestX;
-  int closestY;
-
-  if (a.x < b.x) {
-    closestX = b.x;
-  } else if (a.x > b.x + b.w) {
-    closestX = b.x + b.w;
+  std::ifstream map {"data/maps/lazy.map"};
+  if (map.fail()) {
+    std::cout << "Unable to load map file." << std::endl;
+    tilesLoaded = false;
   } else {
-    closestX = a.x;
+    for (int i = 0; i < TOTAL_TILES; i++) {
+      int tileType = -1;
+
+      map >> tileType;
+
+      if (map.fail()) {
+        std::cout << "Error loading map: Unexpected EOF." << std::endl;
+        tilesLoaded = false;
+        break;
+      }
+
+      if ((tileType >= 0) && (tileType < TOTAL_TILE_SPRITES)) {
+        tiles[i] = new Tile(x, y, tileType);
+      } else {
+        std::cout << "Error loading map: Invalid tile type at "
+                  << i << "." << std::endl;
+        tilesLoaded = false;
+        break;
+      }
+
+      x += TILE_WIDTH;
+
+      if (x >= LEVEL_WIDTH) {
+        x = 0;
+        y += TILE_HEIGHT;
+      }
+    }
   }
 
-  if (a.y < b.y) {
-    closestY = b.y;
-  } else if (a.y > b.y + b.h) {
-    closestY = b.y + b.h;
-  } else {
-    closestY = a.y;
+  if (tilesLoaded) {
+    gTileClips[TILE_RED] = {0, 0, TILE_WIDTH, TILE_HEIGHT};
+    gTileClips[TILE_GREEN] = {0, 80, TILE_WIDTH, TILE_HEIGHT};
+    gTileClips[TILE_BLUE] = {0, 160, TILE_WIDTH, TILE_HEIGHT};
+    gTileClips[TILE_TOPLEFT] = {80, 0, TILE_WIDTH, TILE_HEIGHT};
+    gTileClips[TILE_LEFT] = {80, 80, TILE_WIDTH, TILE_HEIGHT};
+    gTileClips[TILE_BOTTOMLEFT] = {80, 160, TILE_WIDTH, TILE_HEIGHT};
+    gTileClips[TILE_TOP] = {160, 0, TILE_WIDTH, TILE_HEIGHT};
+    gTileClips[TILE_CENTER] = {160, 80, TILE_WIDTH, TILE_HEIGHT};
+    gTileClips[TILE_BOTTOM] = {160, 160, TILE_WIDTH, TILE_HEIGHT};
+    gTileClips[TILE_TOPRIGHT] = {240, 0, TILE_WIDTH, TILE_HEIGHT};
+    gTileClips[TILE_RIGHT] = {240, 80, TILE_WIDTH, TILE_HEIGHT};
+    gTileClips[TILE_BOTTOMRIGHT] = {240, 160, TILE_WIDTH, TILE_HEIGHT};
   }
 
-  return (distanceSquared(a.x, a.y, closestX, closestY) < ((a.r) * (a.r)));
+  map.close();
+
+  return tilesLoaded;
+}
+
+bool touchesWall(SDL_Rect box, Tile* tiles[])
+{
+  for (int i = 0; i < TOTAL_TILES; i++) {
+    if ((tiles[i]->getType() >= TILE_CENTER)
+        && (tiles[i]->getType() <= TILE_TOPLEFT)) {
+      if (checkCollision(box, tiles[i]->getBox())) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+bool checkCollision(SDL_Rect a, SDL_Rect b)
+{
+  int leftA;
+  int leftB;
+  int rightA;
+  int rightB;
+  int topA;
+  int topB;
+  int bottomA;
+  int bottomB;
+
+  leftA = a.x;
+  rightA = a.x + a.w;
+  topA = a.y;
+  bottomA = a.y + a.h;
+
+  leftB = b.x;
+  rightB = b.x + b.w;
+  topB = b.y;
+  bottomB = b.y + b.h;
+
+  if ((bottomA <= topB)
+      || (topA >= bottomB)
+      || (rightA <= leftB)
+      || (leftA >= rightB)) {
+    return false;
+  }
+
+  return true;
 }
 
 SDL_Texture* loadTexture(std::string path)
