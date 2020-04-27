@@ -18,6 +18,8 @@ The following assets are created by me and are licensed under [CC-BY 4.0](https:
 
 * I have skipped Lessons 19 and 20, both of which teach you about getting input from gamepads, due to lack of a working controller.
 
+* I have skipped Lesson 37, which teaches you about using multiple displays, due to lack of a spare monitor. I could have used our TV, but using it for just one lesson would be a hassle for me.
+
 ## Credits
 The code written here is based on the code in the [SDL 2 tutorial](https://lazyfoo.net/tutorials/SDL/) of Lazy Foo. Assets used here, unless otherwise stated, are obtained from the tutorial.
 
