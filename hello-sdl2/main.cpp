@@ -1,6 +1,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -21,6 +22,7 @@ const int TOTAL_BUTTONS = 4;
 const int SCREEN_FPS = 60;
 const int SCREEN_TICKS_PER_FRAME = 1000 / SCREEN_FPS;
 
+SDL_Window* gWindow = nullptr;
 SDL_Renderer* gRenderer = nullptr;
 TTF_Font* gFont = nullptr;
 Mix_Music* gMusic = nullptr;
@@ -329,6 +331,58 @@ LTexture gDotTexture;
 bool checkCollision(Circle& a, Circle& b);
 bool checkCollision(Circle& a, SDL_Rect& b);
 
+const int TOTAL_PARTICLES = 20;
+
+LTexture gRedTexture;
+LTexture gGreenTexture;
+LTexture gBlueTexture;
+LTexture gShimmerTexture;
+
+class Particle
+{
+public:
+  Particle(int x, int y)
+      : posX(x - 5 + (rand() % 25))
+      , posY(y - 5 + (rand() % 25))
+      , frame(rand() % 5)
+  {
+    switch (rand() % 3) {
+      case 0:
+        this->texture = &gRedTexture;
+        break;
+      case 1:
+        this->texture = &gGreenTexture;
+        break;
+      case 2:
+        this->texture = &gBlueTexture;
+        break;
+    }
+  }
+
+  void render()
+  {
+    this->texture->render(this->posX, this->posY);
+
+    if (this->frame % 2 == 0) {
+      gShimmerTexture.render(this->posX, this->posY);
+    }
+
+    this->frame++;
+  }
+
+  bool isDead()
+  {
+    return this->frame > 10;
+  }
+
+private:
+  int posX;
+  int posY;
+  int frame;
+
+  LTexture* texture;
+};
+
 class Dot
 {
 public:
@@ -337,12 +391,23 @@ public:
 
   static const int DOT_VEL = 10;
 
-  Dot(int x, int y)
-      : posX(x)
-      , posY(y)
+  Dot()
+      : posX(0)
+      , posY(0)
       , velX(0)
       , velY(0)
-      , collider({0, 0, DOT_WIDTH / 2}) {}
+  {
+    for (int i = 0; i < TOTAL_PARTICLES; i++) {
+      particles[i] = new Particle(this->posX, this->posY);
+    }
+  }
+
+  ~Dot()
+  {
+    for (int i = 0; i < TOTAL_PARTICLES; i++) {
+      delete particles[i];
+    }
+  }
 
   void handleEvent(SDL_Event* event)
   {
@@ -379,31 +444,31 @@ public:
   void render()
   {
     gDotTexture.render(this->posX, this->posY);
-  }
-
-  Circle& getCollider()
-  {
-    return this->collider;
-  }
-
-  int getPosX()
-  {
-    return this->posX;
-  }
-
-  int getPosY()
-  {
-    return this->posY;
+    this->renderParticles();
   }
 
 private:
+  Particle* particles[TOTAL_PARTICLES];
+
   int posX;
   int posY;
 
   int velX;
   int velY;
 
-  Circle collider;
+  void renderParticles()
+  {
+    for (int i = 0; i < TOTAL_PARTICLES; i++) {
+      if (this->particles[i]->isDead()) {
+        delete this->particles[i];
+        this->particles[i] = new Particle(this->posX, this->posY);
+      }
+    }
+
+    for (int i = 0; i < TOTAL_PARTICLES; i++) {
+      this->particles[i]->render();
+    }
+  }
 };
 
 const int TOTAL_WINDOWS = 3;
@@ -630,9 +695,7 @@ int main(int argc, char* args[])
       bool shouldAppQuit = false;
       SDL_Event event;
 
-      for (int i = 1; i < TOTAL_WINDOWS; i++) {
-        gWindows[i].init();
-      }
+      Dot dot;
 
       while (!shouldAppQuit) {
         while (SDL_PollEvent(&event) != 0) {
@@ -640,40 +703,17 @@ int main(int argc, char* args[])
             shouldAppQuit = true;
           }
 
-          for (int i = 0; i < TOTAL_WINDOWS; i++) {
-            gWindows[i].handleEvent(event);
-          }
-
-          if (event.type == SDL_KEYDOWN) {
-            switch (event.key.keysym.sym) {
-              case SDLK_1:
-                gWindows[0].focus();
-                break;
-              case SDLK_2:
-                gWindows[1].focus();
-                break;
-              case SDLK_3:
-                gWindows[2].focus();
-                break;
-            }
-          }
+          dot.handleEvent(&event);
         }
 
-        for (int i = 0; i < TOTAL_WINDOWS; i++) {
-          gWindows[i].render();
-        }
+        dot.move();
 
-        bool allWindowsClosed = true;
-        for (int i = 0; i < TOTAL_WINDOWS; i++) {
-          if (gWindows[i].isShown()) {
-            allWindowsClosed = false;
-            break;
-          }
-        }
+        SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
+        SDL_RenderClear(gRenderer);
 
-        if (allWindowsClosed) {
-          shouldAppQuit = true;
-        }
+        dot.render();
+
+        SDL_RenderPresent(gRenderer);
       }
     }
   }
@@ -691,12 +731,24 @@ bool initApp()
     return false;
   }
 
-  if (!SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1")) {
-    std::cout << "Warning: Linear texture filtering not enabled." << std::endl;
+  gWindow = SDL_CreateWindow("Hello SDL 2",
+                             SDL_WINDOWPOS_UNDEFINED,
+                             SDL_WINDOWPOS_UNDEFINED,
+                             SCREEN_WIDTH,
+                             SCREEN_HEIGHT,
+                             SDL_WINDOW_SHOWN);
+  if (gWindow == nullptr) {
+    std::cout << "Window could not be created. SDL Error: " << SDL_GetError()
+              << std::endl;
+    return false;
   }
 
-  if (!gWindows[0].init()) {
-    std::cout << "Window 0 could not be created." << std::endl;
+  gRenderer = SDL_CreateRenderer(gWindow, -1,
+                                 SDL_RENDERER_ACCELERATED
+                                 | SDL_RENDERER_PRESENTVSYNC);
+  if (gRenderer == nullptr) {
+    std::cout << "Renderer could not be created. SDL Error: " << SDL_GetError()
+              << std::endl;
     return false;
   }
 
@@ -727,6 +779,37 @@ bool initApp()
 bool loadMedia()
 {
   bool loadingSuccessState = true;
+
+  if (!gDotTexture.loadFromFile("data/textures/dot.bmp")) {
+    std::cout << "Failed to load dot texture." << std::endl;
+    loadingSuccessState = false;
+  }
+
+  if (!gRedTexture.loadFromFile("data/textures/red.bmp")) {
+    std::cout << "Failed to load red texture." << std::endl;
+    loadingSuccessState = false;
+  }
+
+  if (!gGreenTexture.loadFromFile("data/textures/green.bmp")) {
+    std::cout << "Failed to load green texture." << std::endl;
+    loadingSuccessState = false;
+  }
+
+  if (!gBlueTexture.loadFromFile("data/textures/blue.bmp")) {
+    std::cout << "Failed to load blue texture." << std::endl;
+    loadingSuccessState = false;
+  }
+
+  if (!gShimmerTexture.loadFromFile("data/textures/shimmer.bmp")) {
+    std::cout << "Failed to load shimmer texture." << std::endl;
+    loadingSuccessState = false;
+  }
+
+  gRedTexture.setAlpha(192);
+  gGreenTexture.setAlpha(192);
+  gBlueTexture.setAlpha(192);
+  gShimmerTexture.setAlpha(192);
+
   return loadingSuccessState;
 }
 
@@ -735,6 +818,10 @@ void closeApp()
   gSceneTexture.free();
   gDotTexture.free();
   gBGTexture.free();
+  gRedTexture.free();
+  gGreenTexture.free();
+  gBlueTexture.free();
+  gShimmerTexture.free();
 
   for (int i = 0; i < TOTAL_WINDOWS; i++) {
     gWindows[i].free();
