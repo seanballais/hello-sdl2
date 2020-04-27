@@ -1,5 +1,5 @@
 # hello-sdl2
-_Copyright (C) 2020 Sean Ballais
+_Copyright (C) 2020 Sean Ballais_
 
 Code I've written while learning about SDL 2.
 
