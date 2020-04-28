@@ -241,7 +241,150 @@ private:
   int height;
 };
 
-LTexture gTargetTexture;
+LTexture gDotTexture;
+
+class Dot
+{
+public:
+  static const int DOT_WIDTH = 20;
+  static const int DOT_HEIGHT = 20;
+
+  static const int DOT_VEL = 640;
+
+  Dot()
+      : posX(0)
+      , posY(0)
+      , velX(0)
+      , velY(0) {}
+
+  void handleEvent(SDL_Event* event)
+  {
+    if (event->type == SDL_KEYDOWN && event->key.repeat == 0) {
+      switch (event->key.keysym.sym) {
+        case SDLK_w: this->velY -= DOT_VEL; break;
+        case SDLK_s: this->velY += DOT_VEL; break;
+        case SDLK_a: this->velX -= DOT_VEL; break;
+        case SDLK_d: this->velX += DOT_VEL; break;
+      }
+    } else if (event->type == SDL_KEYUP && event->key.repeat == 0) {
+      switch (event->key.keysym.sym) {
+        case SDLK_w: this->velY += DOT_VEL; break;
+        case SDLK_s: this->velY -= DOT_VEL; break;
+        case SDLK_a: this->velX += DOT_VEL; break;
+        case SDLK_d: this->velX -= DOT_VEL; break;
+      }
+    }
+  }
+
+  void move(float timeStep)
+  {
+    this->posX += this->velX * timeStep;
+    if (this->posX < 0) {
+      this->posX = 0;
+    } else if (this->posX > SCREEN_WIDTH - DOT_WIDTH) {
+      this->posX = SCREEN_WIDTH - DOT_WIDTH;
+    }
+
+    this->posY += this->velY * timeStep;
+    if (this->posY < 0) {
+      this->posY = 0;
+    } else if (this->posY > SCREEN_HEIGHT - DOT_HEIGHT) {
+      this->posY = SCREEN_HEIGHT - DOT_HEIGHT;
+    }
+  }
+
+  void render()
+  {
+    gDotTexture.render(this->posX, this->posY);
+  }
+
+private:
+  int posX;
+  int posY;
+
+  int velX;
+  int velY;
+};
+
+class LTimer
+{
+public:
+  LTimer()
+    : startTicks(0)
+    , pausedTicks(0)
+    , isPausedState(false)
+    , isStartedState(false) {}
+
+  bool isStarted()
+  {
+    return this->isStartedState;
+  }
+
+  bool isPaused()
+  {
+    return this->isPausedState && this->isStartedState;
+  }
+
+  void start()
+  {
+    this->isStartedState = true;
+    this->isPausedState = false;
+
+    this->startTicks = SDL_GetTicks();
+    this->pausedTicks = 0;
+  }
+
+  void stop()
+  {
+    this->isStartedState = false;
+    this->isPausedState = false;
+
+    this->startTicks = 0;
+    this->pausedTicks = 0;
+  }
+
+  void pause()
+  {
+    if (this->isStarted() && !this->isPaused()) {
+      this->isPausedState = true;
+
+      this->pausedTicks = SDL_GetTicks() - this->startTicks;
+      this->startTicks = 0;
+    }
+  }
+
+  void resume()
+  {
+    if (this->isStarted() && this->isPaused()) {
+      this->isPausedState = false;
+
+      this->startTicks = SDL_GetTicks() - this->pausedTicks;
+
+      this->pausedTicks = 0;
+    }
+  }
+
+  uint32_t getTicks()
+  {
+    uint32_t time = 0;
+    if (this->isStarted()) {
+      if (this->isPaused()) {
+        time = this->pausedTicks;
+      } else {
+        time = SDL_GetTicks() - this->startTicks;
+      }
+    }
+
+    return time;
+  }
+
+private:
+  uint32_t startTicks;
+  uint32_t pausedTicks;
+
+  bool isPausedState;
+  bool isStartedState;
+};
 
 bool initApp();
 bool loadMedia();
@@ -261,52 +404,27 @@ int main(int argc, char* args[])
       bool shouldAppQuit = false;
       SDL_Event event;
 
-      double angle = 0;
-      SDL_Point screenCenter = { SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 };
+      Dot dot;
+      LTimer stepTimer;
       while (!shouldAppQuit) {
         while (SDL_PollEvent(&event) != 0) {
           if (event.type == SDL_QUIT) {
             shouldAppQuit = true;
           }
+
+          dot.handleEvent(&event);
         }
 
-        angle += 2;
-        if (angle > 360) {
-          angle -= 360;
-        }
+        float timeStep = stepTimer.getTicks() / 1000.f;
 
-        gTargetTexture.setAsRenderTarget();
+        dot.move(timeStep);
+
+        stepTimer.start();
 
         SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
         SDL_RenderClear(gRenderer);
 
-        SDL_Rect fillRect { SCREEN_WIDTH / 4, SCREEN_HEIGHT / 4,
-                            SCREEN_WIDTH / 2, SCREEN_WIDTH / 2 };
-        SDL_SetRenderDrawColor(gRenderer, 0xFF, 0x00, 0x00, 0xFF);
-        SDL_RenderFillRect(gRenderer, &fillRect);
-
-        SDL_Rect outlineRect { SCREEN_WIDTH / 6, SCREEN_HEIGHT / 6,
-                               SCREEN_WIDTH * 2 / 3, SCREEN_HEIGHT * 2 / 3 };
-        SDL_SetRenderDrawColor(gRenderer, 0x00, 0xFF, 0x00, 0xFF);
-        SDL_RenderDrawRect(gRenderer, &outlineRect);
-
-        SDL_SetRenderDrawColor(gRenderer, 0x00, 0x00, 0xFF, 0xFF);
-        SDL_RenderDrawLine(gRenderer,
-                           0, SCREEN_HEIGHT / 2,
-                           SCREEN_WIDTH, SCREEN_HEIGHT / 2);
-
-        SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0x00, 0xFF);
-        for (int i = 0; i < SCREEN_HEIGHT; i+= 4) {
-          SDL_RenderDrawPoint(gRenderer, SCREEN_WIDTH / 2, i);
-        }
-
-        // Reset render target.
-        SDL_SetRenderTarget(gRenderer, nullptr);
-
-        SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
-        SDL_RenderClear(gRenderer);
-
-        gTargetTexture.render(0, 0, nullptr, angle, &screenCenter);
+        dot.render();
 
         SDL_RenderPresent(gRenderer);
       }
@@ -363,9 +481,8 @@ bool loadMedia()
 {
   bool loadingSuccessState = true;
 
-  if (!gTargetTexture.createBlank(SCREEN_WIDTH, SCREEN_HEIGHT,
-                                  SDL_TEXTUREACCESS_TARGET)) {
-    std::cout << "Failed to create target texture." << std::endl;
+  if (!gDotTexture.loadFromFile("data/textures/dot.bmp")) {
+    std::cout << "Unable to load dot texture." << std::endl;
     loadingSuccessState = false;
   }
 
@@ -374,7 +491,7 @@ bool loadMedia()
 
 void closeApp()
 {
-  gTargetTexture.free();
+  gDotTexture.free();
 
   SDL_DestroyRenderer(gRenderer);
   SDL_DestroyWindow(gWindow);
