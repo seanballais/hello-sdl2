@@ -41,7 +41,7 @@ public:
                 << IMG_GetError() << std::endl;
     } else {
       SDL_Surface* formattedSurface = SDL_ConvertSurfaceFormat(
-        surface, SDL_GetWindowPixelFormat(gWindow), 0);
+        surface, SDL_PIXELFORMAT_RGBA8888, 0);
       if (formattedSurface == nullptr) {
         std::cout << "Unable to convert loaded surface to display format. "
                   << "SDL Error: " << SDL_GetError() << std::endl;
@@ -49,7 +49,7 @@ public:
       }
 
       texture = SDL_CreateTexture(gRenderer,
-                                  SDL_GetWindowPixelFormat(gWindow),
+                                  SDL_PIXELFORMAT_RGBA8888,
                                   SDL_TEXTUREACCESS_STREAMING,
                                   formattedSurface->w,
                                   formattedSurface->h);
@@ -60,10 +60,28 @@ public:
         return false;
       }
 
+      SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
+
       SDL_LockTexture(texture, nullptr, &(this->pixels), &(this->pitch));
 
       memcpy(this->pixels, formattedSurface->pixels,
              formattedSurface->pitch * formattedSurface->h);
+
+      this->width = formattedSurface->w;
+      this->height = formattedSurface->h;
+
+      uint32_t* pixels = (uint32_t*) this->pixels;
+      int pixelCount = (this->pitch / 4) * this->height;
+
+      uint32_t colourKey = SDL_MapRGB(formattedSurface->format, 0, 0xFF, 0xFF);
+      uint32_t transparent = SDL_MapRGBA(formattedSurface->format,
+                                         0x00, 0xFF, 0xFF, 0x00);
+
+      for (int i = 0; i < pixelCount; i++) {
+        if (pixels[i] == colourKey) {
+          pixels[i] = transparent;
+        }
+      }
 
       SDL_UnlockTexture(texture);
 
@@ -179,6 +197,13 @@ public:
     return this->pitch;
   }
 
+  uint32_t getPixel32(unsigned int x, unsigned int y)
+  {
+    uint32_t* pixels = (uint32_t*) this->pixels;
+
+    return pixels[(y * (this->pitch / 4)) + x];
+  }
+
 private:
   SDL_Texture* texture;
   void* pixels;
@@ -188,7 +213,151 @@ private:
   int height;
 };
 
-LTexture gFooTexture;
+class LBitmapFont
+{
+public:
+  LBitmapFont()
+    : bitmap(nullptr)
+    , newLine(0)
+    , space(0) {}
+
+  bool buildFont(LTexture* bitmap)
+  {
+    bool buildSuccess = true;
+
+    if (!bitmap->lockTexture()) {
+      std::cout << "Unable to lock bitmap font texture." << std::endl;
+      buildSuccess = false;
+    } else {
+      uint32_t bgColour = bitmap->getPixel32(0, 0);
+
+      int cellW = bitmap->getWidth() / 16;
+      int cellH = bitmap->getHeight() / 16;
+
+      int top = cellH;
+      int baseA = cellH;
+
+      int currentChar = 0;
+
+      for (int rows = 0; rows < 16; rows++) {
+        for (int cols = 0; cols < 16; cols++) {
+          this->chars[currentChar] = SDL_Rect {cellW * cols, cellH * rows,
+                                               cellW, cellH};
+
+          for (int pCol = 0; pCol < cellW; pCol++) {
+            for (int pRow = 0; pRow < cellH; pRow++) {
+              int pX = (cellW * cols) + pCol;
+              int pY = (cellH * rows) + pRow;
+
+              if (bitmap->getPixel32(pX, pY) != bgColour) {
+                this->chars[currentChar].x = pX;
+
+                // Break the loops.
+                pCol = cellW;
+                pRow = cellH;
+              }
+            }
+          }
+
+          for (int pColW = cellW - 1; pColW >= 0; pColW--) {
+            for (int pRowW = 0; pRowW < cellH; pRowW++) {
+              int pX = (cellW * cols) + pColW;
+              int pY = (cellH * rows) + pRowW;
+
+              if (bitmap->getPixel32(pX, pY) != bgColour) {
+                this->chars[currentChar].w = (pX - this->chars[currentChar].x)
+                                             + 1;
+
+                pColW = -1;
+                pRowW = cellH;
+              }
+            }
+          }
+
+          for (int pRow = 0; pRow < cellH; pRow++) {
+            for (int pCol = 0; pCol < cellW; pCol++) {
+              int pX = (cellW * cols) + pCol;
+              int pY = (cellH * rows) + pRow;
+
+              if (bitmap->getPixel32(pX, pY) != bgColour) {
+                if (pRow < top) {
+                  top = pRow;
+                }
+
+                pCol = cellW;
+                pRow = cellH;
+              }
+            }
+          }
+
+          if (currentChar == 'A') {
+            for (int pRow = cellH - 1; pRow >= 0; pRow--) {
+              for (int pCol = 0; pCol < cellW; pCol++) {
+                int pX = (cellW * cols) + pCol;
+                int pY = (cellH * rows) + pRow;
+
+                if (bitmap->getPixel32(pX, pY) != bgColour) {
+                  baseA = pRow;
+
+                  pCol = cellW;
+                  pRow = -1;
+                }
+              }
+            }
+          }
+
+          currentChar++;
+        }
+      }
+
+      this->space = cellW / 2;
+      this->newLine = baseA - top;
+
+      for (int i = 0; i < 256; i++) {
+        this->chars[i].y += top;
+        this->chars[i].h -= top;
+      }
+
+      bitmap->unlockTexture();
+      this->bitmap = bitmap;
+    }
+
+    return buildSuccess;
+  }
+
+  void renderText(int x, int y, std::string text)
+  {
+    if (this->bitmap != nullptr) {
+      int curX = x;
+      int curY = y;
+
+      for (size_t i = 0; i < text.length(); i++) {
+        if (text[i] == ' ') {
+          curX += this->space;
+        } else if (text[i] == '\n') {
+          curY += this->newLine;
+
+          curX = x;
+        } else {
+          int ascii = (unsigned char) text[i];
+
+          this->bitmap->render(curX, curY, &(this->chars[ascii]));
+
+          curX += this->chars[ascii].w + 1;
+        }
+      }
+    }
+  }
+
+private:
+  LTexture* bitmap;
+  SDL_Rect chars[256];
+
+  int newLine;
+  int space;
+};
+
+LTexture lazyFontTexture;
 
 bool initApp();
 bool loadMedia();
@@ -206,6 +375,10 @@ int main(int argc, char* args[])
       std::cout << "Failed to load media." << std::endl;
     } else {
       bool shouldAppQuit = false;
+
+      LBitmapFont lazyFont;
+      lazyFont.buildFont(&lazyFontTexture);
+
       SDL_Event event;
       while (!shouldAppQuit) {
         while (SDL_PollEvent(&event) != 0) {
@@ -217,9 +390,7 @@ int main(int argc, char* args[])
         SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
         SDL_RenderClear(gRenderer);
 
-        gFooTexture.render(
-          (SCREEN_WIDTH - gFooTexture.getWidth()) / 2,
-          (SCREEN_HEIGHT - gFooTexture.getHeight()) / 2);
+        lazyFont.renderText(45, 45, "Hello\nSDL2!");
 
         SDL_RenderPresent(gRenderer);
       }
@@ -276,42 +447,17 @@ bool loadMedia()
 {
   bool loadingSuccessState = true;
 
-  if (!gFooTexture.loadFromFile("data/textures/foo.png")) {
-    std::cout << "Failed to load corner texture." << std::endl;
+  if (!lazyFontTexture.loadFromFile("data/textures/lazyfont.png")) {
+    std::cout << "Unable to load Lazy Font texture." << std::endl;
     loadingSuccessState = false;
-  } else {
-    if (!gFooTexture.lockTexture()) {
-      std::cout << "Unable to lock Foo texture." << std::endl;
-    } else {
-      uint32_t format = SDL_GetWindowPixelFormat(gWindow);
-      SDL_PixelFormat* mappingFormat = SDL_AllocFormat(format);
-
-      // We want 32-bit pixels.
-      uint32_t* pixels = (uint32_t*) gFooTexture.getPixels();
-      int pixelCount = (gFooTexture.getPitch() / 4) 
-                       * gFooTexture.getHeight();
-
-      uint32_t colourKey = SDL_MapRGB(mappingFormat, 0, 0xFF, 0xFF);
-      uint32_t transparent = SDL_MapRGBA(mappingFormat, 0xFF, 0xFF, 0xFF, 0x00);
-
-      for (int i = 0; i < pixelCount; i++) {
-        if (pixels[i] == colourKey) {
-          pixels[i] = transparent;
-        }
-      }
-
-      gFooTexture.unlockTexture();
-
-      SDL_FreeFormat(mappingFormat);
-    }
   }
-  
+
   return loadingSuccessState;
 }
 
 void closeApp()
 {
-  gFooTexture.free();
+  lazyFontTexture.free();
 
   SDL_DestroyRenderer(gRenderer);
   SDL_DestroyWindow(gWindow);
