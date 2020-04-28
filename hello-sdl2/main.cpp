@@ -99,6 +99,22 @@ public:
     return texture != nullptr;
   }
 
+  bool createBlank(int width, int height)
+  {
+    this->texture = SDL_CreateTexture(gRenderer, SDL_PIXELFORMAT_RGBA8888,
+                                      SDL_TEXTUREACCESS_STREAMING,
+                                      width, height);
+    if (this->texture == nullptr) {
+      std::cout << "Unable to create blank texture. SDL Error: "
+                << SDL_GetError() << std::endl;
+    } else {
+      this->width = width;
+      this->height = height;
+    }
+
+    return this->texture != nullptr;
+  }
+
   void free()
   {
     if (this->texture != nullptr) {
@@ -192,6 +208,13 @@ public:
     return this->pixels;
   }
 
+  void copyPixels(void* pixels)
+  {
+    if (this->pixels != nullptr) {
+      memcpy(this->pixels, pixels, this->pitch * this->height);
+    }
+  }
+
   int getPitch()
   {
     return this->pitch;
@@ -213,151 +236,72 @@ private:
   int height;
 };
 
-class LBitmapFont
+class DataStream
 {
 public:
-  LBitmapFont()
-    : bitmap(nullptr)
-    , newLine(0)
-    , space(0) {}
+  DataStream()
+    : images {nullptr, nullptr, nullptr, nullptr}
+    , currentImage(0)
+    , delayFrames(4) {}
 
-  bool buildFont(LTexture* bitmap)
+  bool loadMedia()
   {
-    bool buildSuccess = true;
+    bool loadingSuccessState = true;
+  
+    for (int i = 0; i < 4; ++i)
+    {
+      std::stringstream animPathStream;
+      animPathStream << "data/textures/animation/foo_walk_" << i << ".png";
 
-    if (!bitmap->lockTexture()) {
-      std::cout << "Unable to lock bitmap font texture." << std::endl;
-      buildSuccess = false;
-    } else {
-      uint32_t bgColour = bitmap->getPixel32(0, 0);
-
-      int cellW = bitmap->getWidth() / 16;
-      int cellH = bitmap->getHeight() / 16;
-
-      int top = cellH;
-      int baseA = cellH;
-
-      int currentChar = 0;
-
-      for (int rows = 0; rows < 16; rows++) {
-        for (int cols = 0; cols < 16; cols++) {
-          this->chars[currentChar] = SDL_Rect {cellW * cols, cellH * rows,
-                                               cellW, cellH};
-
-          for (int pCol = 0; pCol < cellW; pCol++) {
-            for (int pRow = 0; pRow < cellH; pRow++) {
-              int pX = (cellW * cols) + pCol;
-              int pY = (cellH * rows) + pRow;
-
-              if (bitmap->getPixel32(pX, pY) != bgColour) {
-                this->chars[currentChar].x = pX;
-
-                // Break the loops.
-                pCol = cellW;
-                pRow = cellH;
-              }
-            }
-          }
-
-          for (int pColW = cellW - 1; pColW >= 0; pColW--) {
-            for (int pRowW = 0; pRowW < cellH; pRowW++) {
-              int pX = (cellW * cols) + pColW;
-              int pY = (cellH * rows) + pRowW;
-
-              if (bitmap->getPixel32(pX, pY) != bgColour) {
-                this->chars[currentChar].w = (pX - this->chars[currentChar].x)
-                                             + 1;
-
-                pColW = -1;
-                pRowW = cellH;
-              }
-            }
-          }
-
-          for (int pRow = 0; pRow < cellH; pRow++) {
-            for (int pCol = 0; pCol < cellW; pCol++) {
-              int pX = (cellW * cols) + pCol;
-              int pY = (cellH * rows) + pRow;
-
-              if (bitmap->getPixel32(pX, pY) != bgColour) {
-                if (pRow < top) {
-                  top = pRow;
-                }
-
-                pCol = cellW;
-                pRow = cellH;
-              }
-            }
-          }
-
-          if (currentChar == 'A') {
-            for (int pRow = cellH - 1; pRow >= 0; pRow--) {
-              for (int pCol = 0; pCol < cellW; pCol++) {
-                int pX = (cellW * cols) + pCol;
-                int pY = (cellH * rows) + pRow;
-
-                if (bitmap->getPixel32(pX, pY) != bgColour) {
-                  baseA = pRow;
-
-                  pCol = cellW;
-                  pRow = -1;
-                }
-              }
-            }
-          }
-
-          currentChar++;
-        }
+      std::string animPath = animPathStream.str();
+      SDL_Surface* surface = IMG_Load(animPath.c_str());
+      if (surface == nullptr) {
+        std::cout << "Unable to load animation image #" << i
+                  << ". SDL Error: " << SDL_GetError() << std::endl;
+        loadingSuccessState = false;
+      }
+      else
+      {
+        this->images[i] = SDL_ConvertSurfaceFormat(
+          surface, SDL_PIXELFORMAT_RGBA8888, 0);
       }
 
-      this->space = cellW / 2;
-      this->newLine = baseA - top;
-
-      for (int i = 0; i < 256; i++) {
-        this->chars[i].y += top;
-        this->chars[i].h -= top;
-      }
-
-      bitmap->unlockTexture();
-      this->bitmap = bitmap;
+      SDL_FreeSurface(surface);
     }
 
-    return buildSuccess;
+    return loadingSuccessState;
   }
 
-  void renderText(int x, int y, std::string text)
+  void free()
   {
-    if (this->bitmap != nullptr) {
-      int curX = x;
-      int curY = y;
-
-      for (size_t i = 0; i < text.length(); i++) {
-        if (text[i] == ' ') {
-          curX += this->space;
-        } else if (text[i] == '\n') {
-          curY += this->newLine;
-
-          curX = x;
-        } else {
-          int ascii = (unsigned char) text[i];
-
-          this->bitmap->render(curX, curY, &(this->chars[ascii]));
-
-          curX += this->chars[ascii].w + 1;
-        }
-      }
+    for (int i = 0; i < 4; i++) {
+      SDL_FreeSurface(this->images[i]);
     }
+  }
+
+  void* getBuffer()
+  {
+    this->delayFrames--;
+    if (this->delayFrames == 0) {
+      this->currentImage++;
+      this->delayFrames = 4;
+    }
+
+    if (this->currentImage == 4) {
+      this->currentImage = 0;
+    }
+
+    return this->images[this->currentImage]->pixels;
   }
 
 private:
-  LTexture* bitmap;
-  SDL_Rect chars[256];
-
-  int newLine;
-  int space;
+  SDL_Surface* images[4];
+  int currentImage;
+  int delayFrames;
 };
 
-LTexture lazyFontTexture;
+LTexture gStreamingTexture;
+DataStream gDataStream;
 
 bool initApp();
 bool loadMedia();
@@ -376,9 +320,6 @@ int main(int argc, char* args[])
     } else {
       bool shouldAppQuit = false;
 
-      LBitmapFont lazyFont;
-      lazyFont.buildFont(&lazyFontTexture);
-
       SDL_Event event;
       while (!shouldAppQuit) {
         while (SDL_PollEvent(&event) != 0) {
@@ -390,7 +331,14 @@ int main(int argc, char* args[])
         SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
         SDL_RenderClear(gRenderer);
 
-        lazyFont.renderText(45, 45, "Hello\nSDL2!");
+        gStreamingTexture.lockTexture();
+        gStreamingTexture.copyPixels(gDataStream.getBuffer());
+        gStreamingTexture.unlockTexture();
+
+        gStreamingTexture.render(
+          (SCREEN_WIDTH - gStreamingTexture.getWidth()) / 2,
+          (SCREEN_HEIGHT - gStreamingTexture.getHeight()) / 2
+        );
 
         SDL_RenderPresent(gRenderer);
       }
@@ -447,17 +395,20 @@ bool loadMedia()
 {
   bool loadingSuccessState = true;
 
-  if (!lazyFontTexture.loadFromFile("data/textures/lazyfont.png")) {
-    std::cout << "Unable to load Lazy Font texture." << std::endl;
+  if (!gStreamingTexture.createBlank(64, 205)) {
+    std::cout << "Unable to create a blank texture." << std::endl;
     loadingSuccessState = false;
   }
+
+  gDataStream.loadMedia();
 
   return loadingSuccessState;
 }
 
 void closeApp()
 {
-  lazyFontTexture.free();
+  gStreamingTexture.free();
+  gDataStream.free();
 
   SDL_DestroyRenderer(gRenderer);
   SDL_DestroyWindow(gWindow);
