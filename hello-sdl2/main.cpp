@@ -9,6 +9,7 @@
 
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
+#include <SDL2/SDL_thread.h>
 
 SDL_Window* gWindow = nullptr;
 SDL_Renderer* gRenderer = nullptr;
@@ -250,11 +251,9 @@ void closeApp();
 SDL_Surface* loadSurface(std::string path);
 SDL_Texture* loadTexture(std::string path);
 
-uint32_t callback(uint32_t interval, void* param)
+int threadFunction(void* data)
 {
-  std::cout << "Callback called back with message: " << (char*) param
-            << std::endl;
-
+  std::cout << "Running thread with value = " << *((int*) data) << std::endl;
   return 0;
 }
 
@@ -269,8 +268,9 @@ int main(int argc, char* args[])
       bool shouldAppQuit = false;
       SDL_Event event;
       
-      void* callbackData = const_cast<char*>("3 seconds waited.");
-      SDL_TimerID timerID = SDL_AddTimer(3 * 1000, callback, callbackData);
+      int data = 15;
+      SDL_Thread* threadID = SDL_CreateThread(threadFunction, "A Thread",
+                                              (void*) &data);
       while (!shouldAppQuit) {
         while (SDL_PollEvent(&event) != 0) {
           if (event.type == SDL_QUIT) {
@@ -286,7 +286,7 @@ int main(int argc, char* args[])
         SDL_RenderPresent(gRenderer);
       }
 
-      SDL_RemoveTimer(timerID);
+      SDL_WaitThread(threadID, nullptr);
     }
   }
 
@@ -340,7 +340,7 @@ bool loadMedia()
 {
   bool loadingSuccessState = true;
 
-  if (!gBgTexture.loadFromFile("data/textures/splash.png")) {
+  if (!gBgTexture.loadFromFile("data/textures/splash2.png")) {
     std::cout << "Unable to load splash texture." << std::endl;
     loadingSuccessState = false;
   }
