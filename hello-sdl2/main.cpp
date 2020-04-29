@@ -251,32 +251,79 @@ void closeApp();
 SDL_Surface* loadSurface(std::string path);
 SDL_Texture* loadTexture(std::string path);
 
-SDL_SpinLock gDataLock = 0;
+SDL_mutex* gBufferLock = nullptr;
+
+SDL_cond* gCanProduce = nullptr;
+SDL_cond* gCanConsume = nullptr;
+
 int gData = -1;
 
-int worker(void* data)
+void produce()
 {
-  std::cout << (char*) data << " starting...\n" << std::endl;
+  SDL_LockMutex(gBufferLock);
+
+  if (gData != -1) {
+    std::cout << "Producer encountered full buffer. Waiting for consumer to "
+              << "empty buffer..." << std::endl;
+    SDL_CondWait(gCanProduce, gBufferLock);
+  }
+
+  gData = rand() % 255;
+  std::cout << "Produced " << gData << "." << std::endl;
+
+  SDL_UnlockMutex(gBufferLock);
+
+  SDL_CondSignal(gCanConsume);
+}
+
+void consume()
+{
+  SDL_LockMutex(gBufferLock);
+
+  if (gData == -1) {
+    std::cout << "Consumer encountered empty buffer. Waiting for producer to "
+              << "fill buffer..." << std::endl;
+    SDL_CondWait(gCanConsume, gBufferLock);
+  }
+
+  std::cout << "Consumed " << gData << std::endl;
+  gData = -1;
+
+  SDL_UnlockMutex(gBufferLock);
+
+  SDL_CondSignal(gCanProduce);
+}
+
+int producer(void* data)
+{
+  std::cout << "Producer started..." << std::endl;
 
   srand(SDL_GetTicks());
 
   for (int i = 0; i < 5; i++) {
-    SDL_Delay(16 + rand() % 32);
+    SDL_Delay(rand() % 1000);
 
-    SDL_AtomicLock(&gDataLock);
-
-    std::cout << (char*) data << " gets " << gData << std::endl;
-
-    gData = rand() % 256;
-
-    std::cout << (char*) data << " sets " << gData << std::endl << std::endl;
-
-    SDL_AtomicUnlock(&gDataLock);
-
-    SDL_Delay(16 + rand() % 640);
+    produce();
   }
 
-  std::cout << (char*) data << " finished!" << std::endl;
+  std::cout << "Producer finished..." << std::endl;
+
+  return 0;
+}
+
+int consumer(void* data)
+{
+  std::cout << "Consumer started..." << std::endl;
+
+  srand(SDL_GetTicks());
+
+  for (int i = 0; i < 5; i++) {
+    SDL_Delay(rand() % 1000);
+
+    consume();
+  }
+
+  std::cout << "Consumer finished..." << std::endl;
 
   return 0;
 }
@@ -293,13 +340,15 @@ int main(int argc, char* args[])
       SDL_Event event;
       
       srand(SDL_GetTicks());
-      void* threadAData = const_cast<char*>("Thread A");
-      SDL_Thread* threadA = SDL_CreateThread(worker, "Thread A", threadAData);
+      void* producerData = const_cast<char*>("Producer");
+      SDL_Thread* producerThread = SDL_CreateThread(producer, "Producer",
+                                                    producerData);
       
       SDL_Delay(16 + rand() % 32);
 
-      void* threadBData = const_cast<char*>("Thread B");
-      SDL_Thread* threadB = SDL_CreateThread(worker, "Thread B", threadBData);
+      void* consumerData = const_cast<char*>("Consumer");
+      SDL_Thread* consumerThread = SDL_CreateThread(consumer, "Consumer",
+                                                    consumerData);
 
       while (!shouldAppQuit) {
         while (SDL_PollEvent(&event) != 0) {
@@ -316,8 +365,8 @@ int main(int argc, char* args[])
         SDL_RenderPresent(gRenderer);
       }
 
-      SDL_WaitThread(threadA, nullptr);
-      SDL_WaitThread(threadB, nullptr);
+      SDL_WaitThread(producerThread, nullptr);
+      SDL_WaitThread(consumerThread, nullptr);
     }
   }
 
@@ -369,9 +418,14 @@ bool initApp()
 
 bool loadMedia()
 {
+  gBufferLock = SDL_CreateMutex();
+
+  gCanProduce = SDL_CreateCond();
+  gCanConsume = SDL_CreateCond();
+
   bool loadingSuccessState = true;
 
-  if (!gBgTexture.loadFromFile("data/textures/splash2.png")) {
+  if (!gBgTexture.loadFromFile("data/textures/splash3.png")) {
     std::cout << "Unable to load splash texture." << std::endl;
     loadingSuccessState = false;
   }
@@ -381,6 +435,16 @@ bool loadMedia()
 
 void closeApp()
 {
+  gBgTexture.free();
+
+  SDL_DestroyMutex(gBufferLock);
+  gBufferLock = nullptr;
+
+  SDL_DestroyCond(gCanProduce);
+  SDL_DestroyCond(gCanConsume);
+  gCanProduce = nullptr;
+  gCanConsume = nullptr;
+
   SDL_DestroyRenderer(gRenderer);
   SDL_DestroyWindow(gWindow);
   
