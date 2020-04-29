@@ -251,7 +251,7 @@ void closeApp();
 SDL_Surface* loadSurface(std::string path);
 SDL_Texture* loadTexture(std::string path);
 
-SDL_sem* gDataLock = nullptr;
+SDL_SpinLock gDataLock = 0;
 int gData = -1;
 
 int worker(void* data)
@@ -263,7 +263,7 @@ int worker(void* data)
   for (int i = 0; i < 5; i++) {
     SDL_Delay(16 + rand() % 32);
 
-    SDL_SemWait(gDataLock);
+    SDL_AtomicLock(&gDataLock);
 
     std::cout << (char*) data << " gets " << gData << std::endl;
 
@@ -271,7 +271,7 @@ int worker(void* data)
 
     std::cout << (char*) data << " sets " << gData << std::endl << std::endl;
 
-    SDL_SemPost(gDataLock);
+    SDL_AtomicUnlock(&gDataLock);
 
     SDL_Delay(16 + rand() % 640);
   }
@@ -369,8 +369,6 @@ bool initApp()
 
 bool loadMedia()
 {
-  gDataLock = SDL_CreateSemaphore(1);
-
   bool loadingSuccessState = true;
 
   if (!gBgTexture.loadFromFile("data/textures/splash2.png")) {
@@ -383,11 +381,6 @@ bool loadMedia()
 
 void closeApp()
 {
-  gBgTexture.free();
-
-  SDL_DestroySemaphore(gDataLock);
-  gDataLock = nullptr;
-
   SDL_DestroyRenderer(gRenderer);
   SDL_DestroyWindow(gWindow);
   
