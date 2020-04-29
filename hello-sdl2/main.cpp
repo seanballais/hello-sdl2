@@ -251,9 +251,33 @@ void closeApp();
 SDL_Surface* loadSurface(std::string path);
 SDL_Texture* loadTexture(std::string path);
 
-int threadFunction(void* data)
+SDL_sem* gDataLock = nullptr;
+int gData = -1;
+
+int worker(void* data)
 {
-  std::cout << "Running thread with value = " << *((int*) data) << std::endl;
+  std::cout << (char*) data << " starting...\n" << std::endl;
+
+  srand(SDL_GetTicks());
+
+  for (int i = 0; i < 5; i++) {
+    SDL_Delay(16 + rand() % 32);
+
+    SDL_SemWait(gDataLock);
+
+    std::cout << (char*) data << " gets " << gData << std::endl;
+
+    gData = rand() % 256;
+
+    std::cout << (char*) data << " sets " << gData << std::endl << std::endl;
+
+    SDL_SemPost(gDataLock);
+
+    SDL_Delay(16 + rand() % 640);
+  }
+
+  std::cout << (char*) data << " finished!" << std::endl;
+
   return 0;
 }
 
@@ -268,9 +292,15 @@ int main(int argc, char* args[])
       bool shouldAppQuit = false;
       SDL_Event event;
       
-      int data = 15;
-      SDL_Thread* threadID = SDL_CreateThread(threadFunction, "A Thread",
-                                              (void*) &data);
+      srand(SDL_GetTicks());
+      void* threadAData = const_cast<char*>("Thread A");
+      SDL_Thread* threadA = SDL_CreateThread(worker, "Thread A", threadAData);
+      
+      SDL_Delay(16 + rand() % 32);
+
+      void* threadBData = const_cast<char*>("Thread B");
+      SDL_Thread* threadB = SDL_CreateThread(worker, "Thread B", threadBData);
+
       while (!shouldAppQuit) {
         while (SDL_PollEvent(&event) != 0) {
           if (event.type == SDL_QUIT) {
@@ -286,7 +316,8 @@ int main(int argc, char* args[])
         SDL_RenderPresent(gRenderer);
       }
 
-      SDL_WaitThread(threadID, nullptr);
+      SDL_WaitThread(threadA, nullptr);
+      SDL_WaitThread(threadB, nullptr);
     }
   }
 
@@ -338,6 +369,8 @@ bool initApp()
 
 bool loadMedia()
 {
+  gDataLock = SDL_CreateSemaphore(1);
+
   bool loadingSuccessState = true;
 
   if (!gBgTexture.loadFromFile("data/textures/splash2.png")) {
@@ -351,6 +384,9 @@ bool loadMedia()
 void closeApp()
 {
   gBgTexture.free();
+
+  SDL_DestroySemaphore(gDataLock);
+  gDataLock = nullptr;
 
   SDL_DestroyRenderer(gRenderer);
   SDL_DestroyWindow(gWindow);
