@@ -1,332 +1,25 @@
-#include <array>
-#include <cmath>
 #include <cstdint>
-#include <cstdlib>
-#include <fstream>
 #include <iostream>
-#include <sstream>
 #include <string>
 
+#include <GL/glut.h>
 #include <SDL2/SDL.h>
-#include <SDL2/SDL_image.h>
-#include <SDL2/SDL_thread.h>
+#include <SDL2/SDL_opengl.h>
 
 SDL_Window* gWindow = nullptr;
-SDL_Renderer* gRenderer = nullptr;
+SDL_GLContext gContext;
+bool gRenderQuad = true;
 
 const int SCREEN_WIDTH = 640;
 const int SCREEN_HEIGHT = 480;
 
-class LTexture
-{
-public:
-  LTexture()
-    : texture(nullptr)
-    , width(0)
-    , height(0) {}
-  
-  ~LTexture()
-  {
-    free();
-  }
-
-  bool loadFromFile(std::string path)
-  {
-    free();
-
-    SDL_Texture* texture = nullptr;
-
-    SDL_Surface* surface = IMG_Load(path.c_str());
-    if (surface == nullptr) {
-      std::cout << "Unable to load image, " << path << ". SDL_image Error: "
-                << IMG_GetError() << std::endl;
-    } else {
-      SDL_Surface* formattedSurface = SDL_ConvertSurfaceFormat(
-        surface, SDL_PIXELFORMAT_RGBA8888, 0);
-      if (formattedSurface == nullptr) {
-        std::cout << "Unable to convert loaded surface to display format. "
-                  << "SDL Error: " << SDL_GetError() << std::endl;
-        return false;
-      }
-
-      texture = SDL_CreateTexture(gRenderer,
-                                  SDL_PIXELFORMAT_RGBA8888,
-                                  SDL_TEXTUREACCESS_STREAMING,
-                                  formattedSurface->w,
-                                  formattedSurface->h);
-      if (texture == nullptr) {
-        std::cout << "Unable to create a blank texture. "
-                  << "SDL Error: " << SDL_GetError() << std::endl;
-        SDL_FreeSurface(formattedSurface);
-        return false;
-      }
-
-      SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
-
-      SDL_LockTexture(texture, nullptr, &(this->pixels), &(this->pitch));
-
-      memcpy(this->pixels, formattedSurface->pixels,
-             formattedSurface->pitch * formattedSurface->h);
-
-      this->width = formattedSurface->w;
-      this->height = formattedSurface->h;
-
-      uint32_t* pixels = (uint32_t*) this->pixels;
-      int pixelCount = (this->pitch / 4) * this->height;
-
-      uint32_t colourKey = SDL_MapRGB(formattedSurface->format, 0, 0xFF, 0xFF);
-      uint32_t transparent = SDL_MapRGBA(formattedSurface->format,
-                                         0x00, 0xFF, 0xFF, 0x00);
-
-      for (int i = 0; i < pixelCount; i++) {
-        if (pixels[i] == colourKey) {
-          pixels[i] = transparent;
-        }
-      }
-
-      SDL_UnlockTexture(texture);
-
-      this->pixels = nullptr;
-      this->width = formattedSurface->w;
-      this->height = formattedSurface->h;
-
-      SDL_FreeSurface(formattedSurface);
-    }
-
-    SDL_FreeSurface(surface);
-
-    this->texture = texture;
-
-    return texture != nullptr;
-  }
-
-  bool createBlank(int width, int height,
-                   SDL_TextureAccess access = SDL_TEXTUREACCESS_STREAMING)
-  {
-    this->texture = SDL_CreateTexture(gRenderer, SDL_PIXELFORMAT_RGBA8888,
-                                      access, width, height);
-    if (this->texture == nullptr) {
-      std::cout << "Unable to create blank texture. SDL Error: "
-                << SDL_GetError() << std::endl;
-    } else {
-      this->width = width;
-      this->height = height;
-    }
-
-    return this->texture != nullptr;
-  }
-
-  void free()
-  {
-    if (this->texture != nullptr) {
-      SDL_DestroyTexture(this->texture);
-
-      this->texture = nullptr;
-      this->width = 0;
-      this->height = 0;
-    }
-  }
-
-  void setColor(uint8_t r, uint8_t g, uint8_t b)
-  {
-    SDL_SetTextureColorMod(this->texture, r, g, b);
-  }
-
-  void setBlendMode(SDL_BlendMode blending)
-  {
-    SDL_SetTextureBlendMode(this->texture, blending);
-  }
-
-  void setAlpha(uint8_t alpha)
-  {
-    SDL_SetTextureAlphaMod(this->texture, alpha);
-  }
-
-  void render(int x, int y, SDL_Rect* clip = nullptr,
-              double angle = 0.0, SDL_Point* center = nullptr,
-              SDL_RendererFlip flip = SDL_FLIP_NONE)
-  {
-    SDL_Rect renderQuad{x, y, this->width, this->height};
-
-    if (clip != nullptr) {
-      renderQuad.w = clip->w;
-      renderQuad.h = clip->h;
-    }
-
-    SDL_RenderCopyEx(gRenderer, this->texture, clip, &renderQuad,
-                     angle, center, flip);
-  }
-
-  void setAsRenderTarget()
-  {
-    SDL_SetRenderTarget(gRenderer, this->texture);
-  }
-
-  int getWidth()
-  {
-    return this->width;
-  }
-
-  int getHeight()
-  {
-    return this->height;
-  }
-
-  bool lockTexture()
-  {
-    bool lockingSuccessful = true;
-
-    if (this->pixels != nullptr) {
-      std::cout << "Texture is already locked." << std::endl;
-      lockingSuccessful = false;
-    } else {
-      if (SDL_LockTexture(this->texture,
-                          nullptr,
-                          &(this->pixels),
-                          &(this->pitch)) != 0) {
-        std::cout << "Unable to lock texture. SDL Error: " << SDL_GetError()
-                  << std::endl;
-        lockingSuccessful = false;
-      }
-    }
-
-    return lockingSuccessful;
-  }
-
-  bool unlockTexture()
-  {
-    bool unlockingSuccess = true;
-
-    if (this->pixels == nullptr) {
-      std::cout << "Texture is not locked." << std::endl;
-      unlockingSuccess = false;
-    } else {
-      SDL_UnlockTexture(this->texture);
-      this->pixels = nullptr;
-      this->pitch = 0;
-    }
-
-    return unlockingSuccess;
-  }
-
-  void* getPixels()
-  {
-    return this->pixels;
-  }
-
-  void copyPixels(void* pixels)
-  {
-    if (this->pixels != nullptr) {
-      memcpy(this->pixels, pixels, this->pitch * this->height);
-    }
-  }
-
-  int getPitch()
-  {
-    return this->pitch;
-  }
-
-  uint32_t getPixel32(unsigned int x, unsigned int y)
-  {
-    uint32_t* pixels = (uint32_t*) this->pixels;
-
-    return pixels[(y * (this->pitch / 4)) + x];
-  }
-
-private:
-  SDL_Texture* texture;
-  void* pixels;
-  int pitch;
-
-  int width;
-  int height;
-};
-
-LTexture gBgTexture;
-
 bool initApp();
+bool initGL();
+void handleKeys(unsigned char key, int x, int);
+void update();
+void render();
 bool loadMedia();
 void closeApp();
-
-SDL_Surface* loadSurface(std::string path);
-SDL_Texture* loadTexture(std::string path);
-
-SDL_mutex* gBufferLock = nullptr;
-
-SDL_cond* gCanProduce = nullptr;
-SDL_cond* gCanConsume = nullptr;
-
-int gData = -1;
-
-void produce()
-{
-  SDL_LockMutex(gBufferLock);
-
-  if (gData != -1) {
-    std::cout << "Producer encountered full buffer. Waiting for consumer to "
-              << "empty buffer..." << std::endl;
-    SDL_CondWait(gCanProduce, gBufferLock);
-  }
-
-  gData = rand() % 255;
-  std::cout << "Produced " << gData << "." << std::endl;
-
-  SDL_UnlockMutex(gBufferLock);
-
-  SDL_CondSignal(gCanConsume);
-}
-
-void consume()
-{
-  SDL_LockMutex(gBufferLock);
-
-  if (gData == -1) {
-    std::cout << "Consumer encountered empty buffer. Waiting for producer to "
-              << "fill buffer..." << std::endl;
-    SDL_CondWait(gCanConsume, gBufferLock);
-  }
-
-  std::cout << "Consumed " << gData << std::endl;
-  gData = -1;
-
-  SDL_UnlockMutex(gBufferLock);
-
-  SDL_CondSignal(gCanProduce);
-}
-
-int producer(void* data)
-{
-  std::cout << "Producer started..." << std::endl;
-
-  srand(SDL_GetTicks());
-
-  for (int i = 0; i < 5; i++) {
-    SDL_Delay(rand() % 1000);
-
-    produce();
-  }
-
-  std::cout << "Producer finished..." << std::endl;
-
-  return 0;
-}
-
-int consumer(void* data)
-{
-  std::cout << "Consumer started..." << std::endl;
-
-  srand(SDL_GetTicks());
-
-  for (int i = 0; i < 5; i++) {
-    SDL_Delay(rand() % 1000);
-
-    consume();
-  }
-
-  std::cout << "Consumer finished..." << std::endl;
-
-  return 0;
-}
 
 int main(int argc, char* args[])
 {
@@ -339,34 +32,27 @@ int main(int argc, char* args[])
       bool shouldAppQuit = false;
       SDL_Event event;
       
-      srand(SDL_GetTicks());
-      void* producerData = const_cast<char*>("Producer");
-      SDL_Thread* producerThread = SDL_CreateThread(producer, "Producer",
-                                                    producerData);
-      
-      SDL_Delay(16 + rand() % 32);
-
-      void* consumerData = const_cast<char*>("Consumer");
-      SDL_Thread* consumerThread = SDL_CreateThread(consumer, "Consumer",
-                                                    consumerData);
+      SDL_StartTextInput();
 
       while (!shouldAppQuit) {
         while (SDL_PollEvent(&event) != 0) {
           if (event.type == SDL_QUIT) {
             shouldAppQuit = true;
+          } else if (event.type == SDL_TEXTINPUT) {
+            int x = 0;
+            int y = 0;
+
+            SDL_GetMouseState(&x, &y);
+            handleKeys(event.text.text[0], x, y);
           }
         }
 
-        SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
-        SDL_RenderClear(gRenderer);
+        render();
 
-        gBgTexture.render(0, 0);
-
-        SDL_RenderPresent(gRenderer);
+        SDL_GL_SwapWindow(gWindow);
       }
 
-      SDL_WaitThread(producerThread, nullptr);
-      SDL_WaitThread(consumerThread, nullptr);
+      SDL_StopTextInput();
     }
   }
 
@@ -377,80 +63,119 @@ int main(int argc, char* args[])
 
 bool initApp()
 {
-  if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) < 0) {
+  if (SDL_Init(SDL_INIT_VIDEO) < 0) {
     std::cout << "SDL could not be initialized. SDL Error: " << SDL_GetError()
               << std::endl;
     return false;
   }
+
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
 
   gWindow = SDL_CreateWindow("Hello SDL 2",
                              SDL_WINDOWPOS_UNDEFINED,
                              SDL_WINDOWPOS_UNDEFINED,
                              SCREEN_WIDTH,
                              SCREEN_HEIGHT,
-                             SDL_WINDOW_SHOWN);
+                             SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN);
   if (gWindow == nullptr) {
     std::cout << "Window could not be created. SDL Error: " << SDL_GetError()
               << std::endl;
     return false;
   }
 
-  gRenderer = SDL_CreateRenderer(gWindow, -1,
-                                 SDL_RENDERER_ACCELERATED
-                                 | SDL_RENDERER_PRESENTVSYNC);
-  if (gRenderer == nullptr) {
-    std::cout << "Renderer could not be created. SDL Error: " << SDL_GetError()
-              << std::endl;
+  gContext = SDL_GL_CreateContext(gWindow);
+  if (gContext == nullptr) {
+    std::cout << "OpenGL context could not be created. SDL Error: "
+              << SDL_GetError() << std::endl;
     return false;
   }
 
-  SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
-  
-  const int imgFlags = IMG_INIT_PNG;
-  if (!(IMG_Init(imgFlags) & imgFlags)) {
-    std::cout << "SDL_image could not initialize. SDL_image Error: "
-              << IMG_GetError() << std::endl;
+  if (SDL_GL_SetSwapInterval(1) < 0) {
+    std::cout << "Warning: Unable to set VSync! SDL Error: " << SDL_GetError()
+              << std::endl;
+  }
+
+  if (!initGL()) {
+    std::cout << "Unable to initialize OpenGL." << std::endl;
     return false;
   }
 
   return true;
 }
 
-bool loadMedia()
+bool initGL()
 {
-  gBufferLock = SDL_CreateMutex();
+  GLenum error = GL_NO_ERROR;
 
-  gCanProduce = SDL_CreateCond();
-  gCanConsume = SDL_CreateCond();
+  glMatrixMode(GL_PROJECTION);
+  glLoadIdentity();
 
-  bool loadingSuccessState = true;
-
-  if (!gBgTexture.loadFromFile("data/textures/splash3.png")) {
-    std::cout << "Unable to load splash texture." << std::endl;
-    loadingSuccessState = false;
+  error = glGetError();
+  if (error != GL_NO_ERROR) {
+    std::cout << "Error initializing OpenGL. " << gluErrorString(error)
+              << std::endl;
+    return false;
   }
 
+  glMatrixMode(GL_MODELVIEW);
+  glLoadIdentity();
+
+  error = glGetError();
+  if (error != GL_NO_ERROR) {
+    std::cout << "Error initializing OpenGL. " << gluErrorString(error)
+              << std::endl;
+    return false;
+  }
+
+  glClearColor(0.f, 0.f, 0.f, 1.f);
+
+  error = glGetError();
+  if (error != GL_NO_ERROR) {
+    std::cout << "Error initializing OpenGL. " << gluErrorString(error)
+              << std::endl;
+    return false;
+  }
+
+  return true;
+}
+
+void handleKeys(unsigned char key, int x, int)
+{
+  if (key == 'q') {
+    gRenderQuad = !gRenderQuad;
+  }
+}
+
+void update()
+{
+
+}
+
+void render()
+{
+  glClear(GL_COLOR_BUFFER_BIT);
+
+  if (gRenderQuad) {
+    glBegin(GL_QUADS);
+      glVertex2f(-0.5f, -0.5f);
+      glVertex2f(0.5f, -0.5f);
+      glVertex2f(0.5f, 0.5f);
+      glVertex2f(-0.5f, 0.5f);
+    glEnd();
+  }
+}
+
+bool loadMedia()
+{
+  bool loadingSuccessState = true;
   return loadingSuccessState;
 }
 
 void closeApp()
 {
-  gBgTexture.free();
-
-  SDL_DestroyMutex(gBufferLock);
-  gBufferLock = nullptr;
-
-  SDL_DestroyCond(gCanProduce);
-  SDL_DestroyCond(gCanConsume);
-  gCanProduce = nullptr;
-  gCanConsume = nullptr;
-
-  SDL_DestroyRenderer(gRenderer);
   SDL_DestroyWindow(gWindow);
-  
-  gRenderer = nullptr;
   gWindow = nullptr;
 
-  IMG_Quit();
   SDL_Quit();
 }
